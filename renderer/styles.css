@@ -290,6 +290,16 @@ input {
 }
 .sel-handle:hover { fill: var(--accent); }
 
+/* Mid-edge polygon handles — smaller, hollow, drag inserts a vertex. */
+.sel-midhandle {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1;
+  opacity: 0.6;
+  cursor: copy;
+}
+.sel-midhandle:hover { opacity: 1; fill: var(--accent); }
+
 /* Tool previews */
 .tool-preview {
   fill: var(--accent-soft);
@@ -324,6 +334,7 @@ input {
   top: 10px; left: 50%;
   transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px;
+  max-width: calc(100% - 32px);
   padding: 8px 12px;
   background: rgba(13, 16, 24, 0.96);
   border: 1px solid var(--accent);
@@ -333,6 +344,12 @@ input {
   color: var(--text);
   z-index: 6;
   backdrop-filter: blur(6px);
+}
+.cal-hint {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.2px;
 }
 .cal-banner[hidden] { display: none; }
 .cal-msg { letter-spacing: 0.2px; }
@@ -571,6 +588,29 @@ input {
 }
 .title-input:hover  { border-color: var(--border); }
 .title-input:focus  { border-color: var(--accent); background: var(--bg); }
+
+/* Block-style action buttons (Set Scale, Join → Polygon) */
+.block-btn {
+  display: block; width: 100%;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px; font-weight: 500;
+  letter-spacing: 0.2px;
+  text-align: center;
+  transition: background 90ms ease;
+}
+.block-btn:hover { background: rgba(255, 45, 157, 0.32); }
+
+.panel-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
 .panel-sub {
   font-size: 11px;
   color: var(--text-faint);

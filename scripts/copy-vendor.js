@@ -7,19 +7,27 @@ const path = require('path')
 
 const root = path.resolve(__dirname, '..')
 
-const PDFJS_FILES = ['pdf.min.mjs', 'pdf.worker.min.mjs']
+function copy(srcPath, dstPath) {
+  fs.mkdirSync(path.dirname(dstPath), { recursive: true })
+  fs.copyFileSync(srcPath, dstPath)
+}
+
+// pdfjs — module + worker, loaded lazily on first PDF import
 const pdfjsSrc = path.join(root, 'node_modules', 'pdfjs-dist', 'build')
-const pdfjsDst = path.join(root, 'renderer', 'vendor', 'pdfjs')
-
-if (!fs.existsSync(pdfjsSrc)) {
-  console.warn('[copy-vendor] pdfjs-dist not installed yet — skipping.')
-  process.exit(0)
+if (fs.existsSync(pdfjsSrc)) {
+  for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs']) {
+    copy(path.join(pdfjsSrc, f), path.join(root, 'renderer', 'vendor', 'pdfjs', f.replace('.min', '')))
+  }
+  console.log('[copy-vendor] pdfjs → renderer/vendor/pdfjs')
+} else {
+  console.warn('[copy-vendor] pdfjs-dist not installed — skipping.')
 }
 
-fs.mkdirSync(pdfjsDst, { recursive: true })
-for (const f of PDFJS_FILES) {
-  const from = path.join(pdfjsSrc, f)
-  const to   = path.join(pdfjsDst, f.replace('.min', ''))   // drop the .min suffix in the dest
-  fs.copyFileSync(from, to)
+// polygon-clipping — UMD bundle, loaded synchronously as window.polygonClipping
+const pcSrc = path.join(root, 'node_modules', 'polygon-clipping', 'dist', 'polygon-clipping.umd.min.js')
+if (fs.existsSync(pcSrc)) {
+  copy(pcSrc, path.join(root, 'renderer', 'vendor', 'polygon-clipping', 'polygon-clipping.min.js'))
+  console.log('[copy-vendor] polygon-clipping → renderer/vendor/polygon-clipping')
+} else {
+  console.warn('[copy-vendor] polygon-clipping not installed — skipping.')
 }
-console.log(`[copy-vendor] pdfjs → ${path.relative(root, pdfjsDst)}`)

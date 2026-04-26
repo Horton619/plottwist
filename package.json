@@ -29,7 +29,8 @@
   "dependencies": {
     "electron-updater": "^6.1.0",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^4.10.38"
+    "pdfjs-dist": "^4.10.38",
+    "polygon-clipping": "^0.15.7"
   },
   "build": {
     "appId": "net.veproductions.plottwist",

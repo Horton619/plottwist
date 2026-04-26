@@ -13,6 +13,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg'
 
 let host, svg, gridLayer, objectLayer, handleLayer, toolLayer, statusEl
 let drag = null   // { mode, ... }
+let spaceDown = false  // space-bar held → temporary pan tool
 
 export function initCanvas(container) {
   host = container
@@ -50,7 +51,9 @@ export function initCanvas(container) {
   svg.addEventListener('pointerup',   onPointerUp)
   svg.addEventListener('dblclick',    onDoubleClick)
   svg.addEventListener('contextmenu', onContextMenu)
-  window.addEventListener('resize', render)
+  window.addEventListener('resize',   render)
+  window.addEventListener('keydown',  onSpaceDown)
+  window.addEventListener('keyup',    onSpaceUp)
 
   subscribe(render)
   render()
@@ -144,6 +147,19 @@ function onPointerDown(e) {
   const room = activeRoom()
   if (!room) return
 
+  // Space-bar pan — works in any mode (calibration, drawing, etc.)
+  if (spaceDown || e.button === 1) {
+    drag = {
+      mode: 'pan',
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startV: { ...state.viewport },
+    }
+    svg.style.cursor = 'grabbing'
+    svg.setPointerCapture(e.pointerId)
+    return
+  }
+
   // Calibration mode intercepts all canvas clicks until 2 points are picked.
   if (state.calibration) {
     addCalibrationPoint([Math.round(w.x), Math.round(w.y)])
@@ -157,6 +173,28 @@ function onPointerDown(e) {
     if (handle) {
       drag = startSelectDrag('resize', { handle: handle.dataset.handle, start: w })
       svg.setPointerCapture(e.pointerId)
+      return
+    }
+    // Mid-edge handle: insert a fresh vertex at the midpoint and immediately
+    // turn the gesture into a vertex-drag for that new vertex.
+    const midHandle = e.target.closest('[data-mid-edge]')
+    if (midHandle) {
+      const oid = midHandle.dataset.objectId
+      const edgeIdx = parseInt(midHandle.dataset.midEdge, 10)
+      const obj = room.objects.find(o => o.id === oid)
+      if (obj && obj.kind === 'polygon') {
+        const a = obj.vertices[edgeIdx]
+        const b = obj.vertices[(edgeIdx + 1) % obj.vertices.length]
+        const mid = [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)]
+        const insertAt = edgeIdx + 1
+        mutateProject(() => { obj.vertices.splice(insertAt, 0, mid) })
+        drag = startSelectDrag('vertex', {
+          objectId:  oid,
+          vertexIdx: insertAt,
+          start:     w,
+        })
+        svg.setPointerCapture(e.pointerId)
+      }
       return
     }
     const vertex = e.target.closest('[data-vertex]')
@@ -221,6 +259,18 @@ function onPointerMove(e) {
   }
 
   if (!drag) return
+  if (drag.mode === 'pan') {
+    const rect = svg.getBoundingClientRect()
+    const factor = drag.startV.w / rect.width
+    state.viewport = {
+      ...state.viewport,
+      x: drag.startV.x - (e.clientX - drag.startClientX) * factor,
+      y: drag.startV.y - (e.clientY - drag.startClientY) * factor,
+    }
+    applyViewport()
+    renderStatus()
+    return
+  }
   if (drag.mode === 'draw-rect') {
     updateRectDraw([Math.round(w.x), Math.round(w.y)])
   } else if (drag.mode === 'move' || drag.mode === 'resize' || drag.mode === 'vertex') {
@@ -231,12 +281,32 @@ function onPointerMove(e) {
 function onPointerUp(e) {
   if (!drag) return
   try { svg.releasePointerCapture(e.pointerId) } catch {}
+  if (drag.mode === 'pan') {
+    drag = null
+    updateCursor()
+    return
+  }
   if (drag.mode === 'draw-rect') {
     endRectDraw()
   } else if (drag.mode === 'move' || drag.mode === 'resize' || drag.mode === 'vertex') {
     endSelectDrag(drag)
   }
   drag = null
+}
+
+function onSpaceDown(e) {
+  if (e.code !== 'Space' || e.repeat) return
+  const tag = e.target && e.target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  e.preventDefault()
+  spaceDown = true
+  if (!drag) svg.style.cursor = 'grab'
+}
+
+function onSpaceUp(e) {
+  if (e.code !== 'Space') return
+  spaceDown = false
+  if (!drag) updateCursor()
 }
 
 function onDoubleClick(e) {
@@ -467,6 +537,22 @@ function renderHandles() {
       outline.setAttribute('vector-effect', 'non-scaling-stroke')
       handleLayer.appendChild(outline)
 
+      // Mid-edge handles (rendered first so corner handles paint on top)
+      const midSize = hSize * 0.7
+      o.vertices.forEach(([ax, ay], i) => {
+        const [bx, by] = o.vertices[(i + 1) % o.vertices.length]
+        const mx = (ax + bx) / 2, my = (ay + by) / 2
+        const m = document.createElementNS(SVG_NS, 'circle')
+        m.setAttribute('cx', mx); m.setAttribute('cy', my)
+        m.setAttribute('r', midSize / 2)
+        m.setAttribute('class', 'sel-handle sel-midhandle')
+        m.setAttribute('vector-effect', 'non-scaling-stroke')
+        m.dataset.objectId = o.id
+        m.dataset.midEdge = i              // index of the edge whose midpoint this is
+        handleLayer.appendChild(m)
+      })
+
+      // Corner (vertex) handles
       o.vertices.forEach(([vx, vy], i) => {
         const h = document.createElementNS(SVG_NS, 'rect')
         h.setAttribute('x', vx - hSize/2); h.setAttribute('y', vy - hSize/2)
@@ -631,10 +717,10 @@ function renderCalibration() {
   }
   calBanner.hidden = false
   if (cal.clicks.length === 0) {
-    calMsg.textContent = 'Set scale: click first point on the underlay'
+    calMsg.innerHTML = `Set scale: click first point on the underlay <span class="cal-hint">— scroll/pinch zooms · ⇧+scroll or space-drag pans · esc cancels</span>`
     calInput.hidden = true; calApply.hidden = true
   } else if (cal.clicks.length === 1) {
-    calMsg.textContent = 'Click second point on the underlay'
+    calMsg.innerHTML = `Click second point on the underlay <span class="cal-hint">— scroll/pinch zooms · ⇧+scroll or space-drag pans · esc cancels</span>`
     calInput.hidden = true; calApply.hidden = true
   } else {
     calMsg.textContent = 'Distance between points:'

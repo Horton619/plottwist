@@ -1,8 +1,10 @@
 // Right panel: live properties of the current selection.
 
-import { state, subscribe, mutateProject, selectedObjects, TYPE_STYLES, styleFor, objectName, activeRoom } from '../state.js'
+import { state, setState, subscribe, mutateProject, selectedObjects, TYPE_STYLES, styleFor, objectName, activeRoom, uid } from '../state.js'
 import { objectBounds, objectArea } from '../geom.js'
 import { formatInches, formatSqFt, parseInches } from '../units.js'
+import { unionShapes, mergedType } from '../shapeOps.js'
+import { startCalibration } from '../canvas.js'
 
 function escapeAttr(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
@@ -27,12 +29,22 @@ export function initObjectInfo(host) {
     }
     if (sel.length > 1) {
       const totalArea = sel.reduce((a, o) => a + objectArea(o), 0)
+      const joinable = sel.every(o => o.kind === 'rect' || o.kind === 'polygon')
       panel.innerHTML = `
         <div class="panel-section">
           <div class="panel-title">${sel.length} objects selected</div>
           <div class="prop-row"><span class="prop-key">Total area</span><span class="prop-val">${formatSqFt(totalArea)}</span></div>
         </div>
+        ${joinable ? `
+          <div class="panel-section">
+            <div class="panel-section-title">Boolean</div>
+            <button class="block-btn" data-action="join">Join → Polygon</button>
+            <p class="panel-hint">Merges overlapping / touching shapes into a single editable polygon.</p>
+          </div>
+        ` : ''}
       `
+      const joinBtn = panel.querySelector('[data-action="join"]')
+      if (joinBtn) joinBtn.addEventListener('click', () => joinSelectedShapes())
       return
     }
 
@@ -73,6 +85,8 @@ export function initObjectInfo(host) {
             <input type="range" class="range-input" data-field="opacity" min="0.05" max="1" step="0.05" value="${o.opacity ?? 0.6}">
             <span class="prop-val small">${Math.round((o.opacity ?? 0.6) * 100)}%</span>
           </div>
+          <button class="block-btn" data-action="scale">Set Scale…</button>
+          <p class="panel-hint">Click two points on the image, then enter the real-world distance between them.</p>
         </div>
       ` : `
         <div class="panel-section">
@@ -142,5 +156,42 @@ export function initObjectInfo(host) {
     panel.querySelectorAll('.num-input').forEach(inp => {
       inp.addEventListener('change', () => update({ [inp.dataset.field]: parseFloat(inp.value) }))
     })
+    const scaleBtn = panel.querySelector('[data-action="scale"]')
+    if (scaleBtn) {
+      scaleBtn.addEventListener('click', () => startCalibration(o.id))
+    }
   }
+}
+
+// Replace the multi-selection with a single merged polygon.
+function joinSelectedShapes() {
+  const sel = selectedObjects()
+  if (sel.length < 2) return
+  const result = unionShapes(sel)
+  if (result.error) {
+    alert(result.error)
+    return
+  }
+  const newType = mergedType(sel)
+  // Position in z-order: bottom-most of the source objects, so the merged
+  // polygon doesn't suddenly jump up the stack.
+  const newId = uid('obj')
+  const sourceIds = new Set(sel.map(s => s.id))
+  mutateProject(p => {
+    const room = p.rooms.find(r => r.id === state.activeRoomId)
+    if (!room) return
+    let insertAt = room.objects.length
+    for (let i = 0; i < room.objects.length; i++) {
+      if (sourceIds.has(room.objects[i].id)) { insertAt = i; break }
+    }
+    room.objects = room.objects.filter(o => !sourceIds.has(o.id))
+    const insertIdx = Math.min(insertAt, room.objects.length)
+    room.objects.splice(insertIdx, 0, {
+      id: newId,
+      kind: 'polygon',
+      type: newType,
+      vertices: result.vertices,
+    })
+  })
+  setState({ selection: [newId] })
 }
