@@ -318,6 +318,90 @@ input {
   pointer-events: none;
 }
 
+/* Calibration banner (overlay at top of canvas while setting image scale) */
+.cal-banner {
+  position: absolute;
+  top: 10px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  background: rgba(13, 16, 24, 0.96);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 0 1px var(--accent-soft);
+  font-size: 12px;
+  color: var(--text);
+  z-index: 6;
+  backdrop-filter: blur(6px);
+}
+.cal-banner[hidden] { display: none; }
+.cal-msg { letter-spacing: 0.2px; }
+.cal-input {
+  width: 110px;
+  padding: 4px 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, "Menlo", monospace;
+  font-size: 12px;
+  outline: none;
+}
+.cal-input:focus  { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
+.cal-input.error  { border-color: #c2476f; box-shadow: 0 0 0 1px rgba(194, 71, 111, 0.4); }
+.cal-apply,
+.cal-cancel {
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+.cal-apply { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.cal-apply:hover  { background: rgba(255, 45, 157, 0.32); }
+.cal-cancel:hover { color: var(--text); border-color: var(--text-faint); }
+
+/* Calibration markers in tool layer */
+.cal-marker {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.cal-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+/* ─── Context menu (layers panel, etc.) ────────────────────────────────── */
+
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column;
+}
+.context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+  border-radius: 3px;
+}
+.context-menu button:hover { background: var(--accent-soft); color: var(--accent); }
+
 /* Status bar */
 .canvas-status {
   position: absolute;
@@ -374,6 +458,22 @@ input {
   color: var(--text-dim);
 }
 
+.header-btn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.2px;
+  transition: color 90ms ease, border-color 90ms ease, background 90ms ease;
+}
+.header-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .layers-list {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -387,10 +487,10 @@ input {
 
 .layer-row {
   display: grid;
-  grid-template-columns: 18px 18px 10px 1fr auto;
+  grid-template-columns: 20px 20px 10px 1fr auto;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  padding: 4px 8px;
   margin-bottom: 1px;
   border-radius: 4px;
   border: 1px solid transparent;
@@ -411,17 +511,19 @@ input {
 .layer-row.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
 
 .layer-toggle {
-  width: 18px; height: 18px;
+  width: 20px; height: 20px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 12px;
-  color: var(--text-faint);
   border-radius: 3px;
+  color: var(--text-dim);
   line-height: 1;
 }
-.layer-toggle:hover { color: var(--text); background: var(--bg); }
-.layer-toggle.visibility.on  { color: var(--text-dim); }
-.layer-toggle.visibility.off { color: var(--text-faint); }
-.layer-toggle.lock.on        { color: var(--accent); }
+.layer-toggle svg { display: block; }
+.layer-toggle:hover { background: var(--bg); }
+.layer-toggle.vis.on   { color: var(--text-dim); }
+.layer-toggle.vis.off  { color: var(--text-faint); }
+.layer-toggle.lk.on    { color: var(--accent); }
+.layer-toggle.lk.off   { color: var(--text-faint); opacity: 0.55; }
+.layer-toggle.lk.off:hover { opacity: 1; }
 
 .layer-swatch {
   width: 8px; height: 14px;

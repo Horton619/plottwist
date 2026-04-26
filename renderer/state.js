@@ -11,6 +11,8 @@ export const state = {
   drawingPolygon: null,                            // { vertices: [[x,y]...], cursor: [x,y], shiftSnap: bool }
   drawingRect:    null,                            // { startX, startY, x, y, w, h, type }
   tabEdit:        null,                            // { objectId, fieldIndex }
+  calibration:    null,                            // { objectId, clicks: [[x,y]...] } when scaling an underlay
+  shapeClipboard: [],                              // copied non-image objects for ⌘C/⌘V
   dirty:          false,
   filePath:       null,
 }

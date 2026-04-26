@@ -3,6 +3,7 @@
 // current viewport's smaller dimension. User can resize via corner handles.
 
 import { state, mutateProject, setState, uid, activeRoom } from '../state.js'
+import { startCalibration } from '../canvas.js'
 
 export function insertImageAt(imageData, worldPoint = null) {
   const room = activeRoom()
@@ -43,5 +44,6 @@ export function insertImageAt(imageData, worldPoint = null) {
     })
   })
   setState({ selection: [id], activeTool: 'select' })
+  startCalibration(id)
   return id
 }

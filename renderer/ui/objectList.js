@@ -1,14 +1,15 @@
-// Photoshop-style layers panel: visibility / lock / drag-reorder.
-// Top of list = top of z-order (rendered last, on top of everything else).
+// Photoshop-style layers panel. Top of list = top of z-order.
 
 import { state, setState, subscribe, mutateProject, activeRoom, objectName, reorderObject, TYPE_STYLES } from '../state.js'
+import { duplicateObjectById, deleteObjectById } from '../app.js'
+import { ICON } from './icons.js'
 
 export function initObjectList(host) {
   host.innerHTML = `
     <div class="layers-panel">
       <div class="layers-header">
         <span class="layers-title">Layers</span>
-        <button class="ghost-btn" data-action="add-image" title="Insert image (⌘⇧I)">＋</button>
+        <button class="header-btn" data-action="add-image" title="Insert image (⌘⇧I)">Import Image</button>
       </div>
       <div class="layers-list" data-list></div>
     </div>
@@ -16,6 +17,10 @@ export function initObjectList(host) {
   host.querySelector('[data-action="add-image"]').addEventListener('click', () => {
     window.dispatchEvent(new CustomEvent('plottwist:insert-image'))
   })
+
+  // Single document-level listener for the right-click menu (the menu itself
+  // lives outside the panel so it can overflow into the canvas if needed).
+  document.addEventListener('click', dismissContextMenu)
 
   subscribe(render)
   render()
@@ -32,11 +37,9 @@ export function initObjectList(host) {
       list.appendChild(empty)
       return
     }
-    // Render top-of-stack first → reverse the array.
-    const objs = room.objects
-    for (let i = objs.length - 1; i >= 0; i--) {
-      const o = objs[i]
-      list.appendChild(buildRow(o, i))
+    // Top of stack first (rendered last, painted on top).
+    for (let i = room.objects.length - 1; i >= 0; i--) {
+      list.appendChild(buildRow(room.objects[i], i))
     }
   }
 
@@ -57,8 +60,8 @@ export function initObjectList(host) {
       : '#98a0b3'
 
     row.innerHTML = `
-      <button class="layer-toggle visibility ${o.hidden ? 'off' : 'on'}" data-action="toggle-hidden" title="${o.hidden ? 'Show' : 'Hide'}">${o.hidden ? '◌' : '●'}</button>
-      <button class="layer-toggle lock ${o.locked ? 'on' : 'off'}" data-action="toggle-locked" title="${o.locked ? 'Unlock' : 'Lock'}">${o.locked ? '⊘' : '⊙'}</button>
+      <button class="layer-toggle vis ${o.hidden ? 'off' : 'on'}" data-action="toggle-hidden" title="${o.hidden ? 'Show' : 'Hide'}">${o.hidden ? ICON.eyeClosed : ICON.eyeOpen}</button>
+      <button class="layer-toggle lk  ${o.locked ? 'on' : 'off'}" data-action="toggle-locked" title="${o.locked ? 'Unlock' : 'Lock'}">${o.locked ? ICON.lockClosed : ICON.lockOpen}</button>
       <span class="layer-swatch" style="background:${swatchColor}"></span>
       <span class="layer-name" title="Double-click to rename">${escapeHtml(objectName(o, room))}</span>
       <span class="layer-type">${typeLabel}</span>
@@ -94,6 +97,14 @@ export function initObjectList(host) {
       }
     })
 
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      // If we right-click an unselected layer, select it first.
+      if (!state.selection.includes(o.id)) setState({ selection: [o.id] })
+      showLayerMenu(e.clientX, e.clientY, o)
+    })
+
     // Drag-reorder
     row.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/x-layer-idx', String(idx))
@@ -109,9 +120,7 @@ export function initObjectList(host) {
       row.classList.toggle('drop-above', above)
       row.classList.toggle('drop-below', !above)
     })
-    row.addEventListener('dragleave', () => {
-      row.classList.remove('drop-above', 'drop-below')
-    })
+    row.addEventListener('dragleave', () => row.classList.remove('drop-above', 'drop-below'))
     row.addEventListener('drop', (e) => {
       e.preventDefault()
       row.classList.remove('drop-above', 'drop-below')
@@ -131,6 +140,43 @@ export function initObjectList(host) {
 
     return row
   }
+}
+
+// ── Tiny floating context menu ────────────────────────────────────────────
+
+let openMenuEl = null
+
+function showLayerMenu(x, y, obj) {
+  dismissContextMenu()
+  const menu = document.createElement('div')
+  menu.className = 'context-menu'
+  menu.innerHTML = `
+    <button data-act="duplicate">Duplicate</button>
+    <button data-act="delete">Delete</button>
+  `
+  menu.style.left = `${x}px`
+  menu.style.top  = `${y}px`
+  document.body.appendChild(menu)
+  openMenuEl = menu
+
+  // Clamp to viewport
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect()
+    if (r.right > window.innerWidth)  menu.style.left = `${window.innerWidth  - r.width  - 8}px`
+    if (r.bottom > window.innerHeight) menu.style.top  = `${window.innerHeight - r.height - 8}px`
+  })
+
+  menu.addEventListener('click', (ev) => {
+    const act = ev.target && ev.target.dataset && ev.target.dataset.act
+    if (!act) return
+    if (act === 'duplicate') duplicateObjectById(obj.id)
+    if (act === 'delete')    deleteObjectById(obj.id)
+    dismissContextMenu()
+  })
+}
+
+function dismissContextMenu() {
+  if (openMenuEl) { openMenuEl.remove(); openMenuEl = null }
 }
 
 function escapeHtml(s) {

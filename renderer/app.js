@@ -1,7 +1,7 @@
 // PlotTwist — renderer entry point. Wires modules + global keyboard shortcuts.
 
 import { state, setState, subscribe, mutateProject, markClean, uid, activeRoom } from './state.js'
-import { initCanvas, fitToContent } from './canvas.js'
+import { initCanvas, fitToContent, cancelCalibration } from './canvas.js'
 import { initToolbar, selectTool } from './ui/toolbar.js'
 import { initProjectSidebar }      from './ui/projectSidebar.js'
 import { initObjectInfo }          from './ui/objectInfo.js'
@@ -67,6 +67,25 @@ function bindKeyboard() {
       if (e.key === 'Escape') { e.preventDefault(); cancelPolygonDraw();  return }
     }
 
+    // Calibration cancel
+    if (state.calibration && e.key === 'Escape') {
+      e.preventDefault(); cancelCalibration(); return
+    }
+
+    // ⌘C / ⌘X copy selected shapes (image clipboard takes priority on paste)
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'c' || e.key === 'C')) {
+      if (state.selection.length) { e.preventDefault(); copyShapes() }
+      return
+    }
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
+      if (state.selection.length) {
+        e.preventDefault()
+        copyShapes()
+        deleteSelection()
+      }
+      return
+    }
+
     // Tool shortcuts
     const toolMap = { v: 'select', f: 'floor', a: 'aisle', o: 'obstruction', g: 'stage', t: 'tech', w: 'walls' }
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -77,12 +96,7 @@ function bindKeyboard() {
     // Delete selection
     if ((e.key === 'Backspace' || e.key === 'Delete') && state.selection.length) {
       e.preventDefault()
-      const ids = new Set(state.selection)
-      mutateProject(p => {
-        const r = p.rooms.find(r => r.id === state.activeRoomId)
-        if (r) r.objects = r.objects.filter(o => !ids.has(o.id))
-      })
-      setState({ selection: [] })
+      deleteSelection()
       return
     }
 
@@ -149,17 +163,26 @@ function bindImageImport() {
   window.addEventListener('paste', async (e) => {
     const tag = e.target && e.target.tagName
     if (tag === 'INPUT' || tag === 'TEXTAREA') return    // don't steal text paste
+
+    // Priority 1: image in system clipboard → rasterize/insert
     const items = e.clipboardData && e.clipboardData.items
-    if (!items) return
-    for (const item of items) {
-      if (item.kind === 'file' && item.type.startsWith('image/')) {
-        const blob = item.getAsFile()
-        if (blob) {
-          e.preventDefault()
-          await importAndInsert(blob, null)
+    if (items) {
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const blob = item.getAsFile()
+          if (blob) {
+            e.preventDefault()
+            await importAndInsert(blob, null)
+            return
+          }
         }
-        return
       }
+    }
+
+    // Priority 2: shapes from internal clipboard (⌘C earlier)
+    if (state.shapeClipboard && state.shapeClipboard.length) {
+      e.preventDefault()
+      pasteShapes()
     }
   })
 
@@ -220,6 +243,76 @@ async function importAndInsert(blobOrFile, worldPoint) {
     console.error('image import failed', err)
     alert(`Couldn't import image: ${err.message}`)
   }
+}
+
+// ── Shape clipboard (⌘C / ⌘X / ⌘V) ────────────────────────────────────────
+
+const PASTE_OFFSET_INCHES = 24    // 2' nudge so the duplicate is visible
+
+function copyShapes() {
+  const sel = state.selection
+  if (!sel.length) return
+  const room = activeRoom()
+  if (!room) return
+  // Skip images — those round-trip via the system clipboard (paste image again).
+  state.shapeClipboard = room.objects
+    .filter(o => sel.includes(o.id) && o.kind !== 'image')
+    .map(o => JSON.parse(JSON.stringify(o)))
+}
+
+function pasteShapes() {
+  if (!state.shapeClipboard.length) return
+  const newIds = []
+  mutateProject(p => {
+    const room = p.rooms.find(r => r.id === state.activeRoomId)
+    if (!room) return
+    for (const proto of state.shapeClipboard) {
+      const dup = JSON.parse(JSON.stringify(proto))
+      dup.id = uid('obj')
+      newIds.push(dup.id)
+      offsetObject(dup, PASTE_OFFSET_INCHES, PASTE_OFFSET_INCHES)
+      room.objects.push(dup)
+    }
+  })
+  setState({ selection: newIds })
+}
+
+export function duplicateObjectById(id) {
+  let newId = null
+  mutateProject(p => {
+    const room = p.rooms.find(r => r.id === state.activeRoomId)
+    if (!room) return
+    const idx = room.objects.findIndex(o => o.id === id)
+    if (idx < 0) return
+    const dup = JSON.parse(JSON.stringify(room.objects[idx]))
+    dup.id = uid('obj')
+    newId = dup.id
+    offsetObject(dup, PASTE_OFFSET_INCHES, PASTE_OFFSET_INCHES)
+    room.objects.splice(idx + 1, 0, dup)
+  })
+  if (newId) setState({ selection: [newId] })
+}
+
+function offsetObject(o, dx, dy) {
+  if (o.kind === 'rect' || o.kind === 'image') { o.x += dx; o.y += dy }
+  else if (o.kind === 'polygon') o.vertices = o.vertices.map(([x, y]) => [x + dx, y + dy])
+}
+
+function deleteSelection() {
+  const ids = new Set(state.selection)
+  mutateProject(p => {
+    const r = p.rooms.find(r => r.id === state.activeRoomId)
+    if (r) r.objects = r.objects.filter(o => !ids.has(o.id))
+  })
+  setState({ selection: [] })
+}
+
+export function deleteObjectById(id) {
+  mutateProject(p => {
+    const r = p.rooms.find(r => r.id === state.activeRoomId)
+    if (r) r.objects = r.objects.filter(o => o.id !== id)
+  })
+  setState({ selection: state.selection.filter(s => s !== id) })
 }
 
 function sniffMimeFromName(name) {

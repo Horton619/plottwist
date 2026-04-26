@@ -4,7 +4,7 @@
 
 import { state, setState, subscribe, mutateProject, activeRoom, selectedObjects, styleFor, uid } from './state.js'
 import { objectBounds, unionBounds, hitTest, distToSegment, snapToAxis } from './geom.js'
-import { formatInches } from './units.js'
+import { formatInches, parseInches } from './units.js'
 import { startRectDraw,    updateRectDraw,    endRectDraw }    from './tools/rectTool.js'
 import { startPolygonDraw, addPolygonVertex,  cancelPolygonDraw, finishPolygonDraw } from './tools/polygonTool.js'
 import { startSelectDrag,  updateSelectDrag,  endSelectDrag }  from './tools/selectTool.js'
@@ -20,11 +20,17 @@ export function initCanvas(container) {
     <div class="canvas-frame">
       <svg class="floor-svg"></svg>
       <div class="canvas-status"></div>
-      <div class="tab-edit-popover" hidden></div>
+      <div class="cal-banner" hidden>
+        <span class="cal-msg"></span>
+        <input class="cal-input" placeholder="e.g. 10' or 120&quot;" hidden>
+        <button class="cal-apply"  hidden>Apply</button>
+        <button class="cal-cancel">Cancel</button>
+      </div>
     </div>
   `
   svg       = host.querySelector('.floor-svg')
   statusEl  = host.querySelector('.canvas-status')
+  bindCalibrationUi(host)
   svg.setAttribute('xmlns', SVG_NS)
 
   gridLayer   = document.createElementNS(SVG_NS, 'g'); gridLayer.setAttribute('class', 'grid-layer')
@@ -137,6 +143,12 @@ function onPointerDown(e) {
   const w = screenToWorld(e.clientX, e.clientY)
   const room = activeRoom()
   if (!room) return
+
+  // Calibration mode intercepts all canvas clicks until 2 points are picked.
+  if (state.calibration) {
+    addCalibrationPoint([Math.round(w.x), Math.round(w.y)])
+    return
+  }
 
   // Tool dispatch
   if (state.activeTool === 'select') {
@@ -287,10 +299,12 @@ function render() {
   renderHandles()
   renderToolLayer()
   renderStatus()
+  renderCalibration()
   updateCursor()
 }
 
 function updateCursor() {
+  if (state.calibration) { svg.style.cursor = 'crosshair'; return }
   const cur = ({
     select: 'default',
     floor:  'crosshair',
@@ -533,3 +547,116 @@ export function rerenderTools() { renderToolLayer() }
 
 // Re-render handles when objects move during a drag.
 export function rerenderHandles() { renderHandles() }
+
+// ── Calibration (set image scale by clicking two points) ───────────────────
+
+let calBanner, calMsg, calInput, calApply, calCancel
+
+function bindCalibrationUi(rootEl) {
+  calBanner = rootEl.querySelector('.cal-banner')
+  calMsg    = rootEl.querySelector('.cal-msg')
+  calInput  = rootEl.querySelector('.cal-input')
+  calApply  = rootEl.querySelector('.cal-apply')
+  calCancel = rootEl.querySelector('.cal-cancel')
+
+  calCancel.addEventListener('click', cancelCalibration)
+  calApply.addEventListener('click', commitCalibration)
+  calInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); commitCalibration() }
+    if (e.key === 'Escape') { e.preventDefault(); cancelCalibration() }
+  })
+}
+
+export function startCalibration(objectId) {
+  state.calibration = { objectId, clicks: [] }
+  setState({})  // re-render
+  // Defer focus-input slightly until banner is shown
+}
+
+export function cancelCalibration() {
+  if (!state.calibration) return
+  setState({ calibration: null })
+}
+
+function addCalibrationPoint(point) {
+  const cal = state.calibration
+  if (!cal) return
+  cal.clicks.push(point)
+  if (cal.clicks.length === 2) {
+    setState({})
+    // Focus input once the banner repaints into "enter distance" mode
+    requestAnimationFrame(() => calInput && calInput.focus())
+  } else {
+    setState({})
+  }
+}
+
+function commitCalibration() {
+  const cal = state.calibration
+  if (!cal || cal.clicks.length !== 2) return
+  const real = parseInches(calInput.value)
+  if (real == null || real <= 0) {
+    calInput.classList.add('error')
+    calInput.focus()
+    return
+  }
+  const [p1, p2] = cal.clicks
+  const currentInches = Math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+  if (currentInches < 1) { cancelCalibration(); return }
+  const k = real / currentInches
+
+  mutateProject(p => {
+    const room = p.rooms.find(r => r.id === state.activeRoomId)
+    if (!room) return
+    const obj = room.objects.find(o => o.id === cal.objectId)
+    if (!obj || obj.kind !== 'image') return
+    const dx1 = p1[0] - obj.x
+    const dy1 = p1[1] - obj.y
+    obj.w = Math.max(1, Math.round(obj.w * k))
+    obj.h = Math.max(1, Math.round(obj.h * k))
+    obj.x = Math.round(p1[0] - dx1 * k)
+    obj.y = Math.round(p1[1] - dy1 * k)
+  })
+  setState({ calibration: null })
+}
+
+function renderCalibration() {
+  const cal = state.calibration
+  if (!calBanner) return
+  if (!cal) {
+    calBanner.hidden = true
+    calInput.value = ''
+    calInput.classList.remove('error')
+    return
+  }
+  calBanner.hidden = false
+  if (cal.clicks.length === 0) {
+    calMsg.textContent = 'Set scale: click first point on the underlay'
+    calInput.hidden = true; calApply.hidden = true
+  } else if (cal.clicks.length === 1) {
+    calMsg.textContent = 'Click second point on the underlay'
+    calInput.hidden = true; calApply.hidden = true
+  } else {
+    calMsg.textContent = 'Distance between points:'
+    calInput.hidden = false; calApply.hidden = false
+  }
+  // Markers
+  const markerSize = pxToWorldDist(5)
+  for (const [i, [px, py]] of cal.clicks.entries()) {
+    const c = document.createElementNS(SVG_NS, 'circle')
+    c.setAttribute('cx', px); c.setAttribute('cy', py)
+    c.setAttribute('r', markerSize)
+    c.setAttribute('class', 'cal-marker')
+    c.setAttribute('vector-effect', 'non-scaling-stroke')
+    toolLayer.appendChild(c)
+    if (i === 1) {
+      const ln = document.createElementNS(SVG_NS, 'line')
+      const [a, b] = cal.clicks
+      ln.setAttribute('x1', a[0]); ln.setAttribute('y1', a[1])
+      ln.setAttribute('x2', b[0]); ln.setAttribute('y2', b[1])
+      ln.setAttribute('class', 'cal-line')
+      ln.setAttribute('vector-effect', 'non-scaling-stroke')
+      toolLayer.appendChild(ln)
+    }
+  }
+}
