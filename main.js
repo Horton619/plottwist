@@ -24,6 +24,14 @@ function createWindow() {
 
   mainWindow.loadFile('renderer/index.html')
 
+  // Forward renderer console output to main stdout — handy in dev.
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('console-message', (_e, level, msg, line, source) => {
+      const tag = ['log', 'warn', 'error'][level] || 'info'
+      console.log(`[renderer ${tag}] ${msg}${source ? ` (${source}:${line})` : ''}`)
+    })
+  }
+
   mainWindow.on('close', (e) => {
     if (userConfirmedQuit || !projectDirty) return
     e.preventDefault()

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
-  <title>PlotTwist</title>
+  <title>PlotTwist — Untitled</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -15,18 +15,20 @@
     </div>
   </header>
 
-  <main class="workspace">
-    <div class="empty-state">
-      <p class="empty-headline">No room yet.</p>
-      <p class="empty-sub">Tools, polygons, and the solver will land here in a follow-up session.</p>
-    </div>
-  </main>
+  <div class="app-grid">
+    <aside id="sidebar" class="pane sidebar-pane"></aside>
+    <section class="canvas-column">
+      <div id="toolbar" class="pane toolbar-pane"></div>
+      <div id="canvas"  class="pane canvas-pane"></div>
+    </section>
+    <aside id="info" class="pane info-pane"></aside>
+  </div>
 
   <footer class="vep-footer">
     <span class="copyright">© 2026 Visual Entropy Productions</span>
     <a class="vep-link" href="https://veproductions.net" target="_blank" rel="noopener">veproductions.net</a>
   </footer>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
