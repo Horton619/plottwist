@@ -271,7 +271,9 @@ function onContextMenu(e) {
 
 function hitTopMost(x, y, objects) {
   for (let i = objects.length - 1; i >= 0; i--) {
-    if (hitTest(objects[i], x, y)) return objects[i]
+    const o = objects[i]
+    if (o.hidden || o.locked) continue
+    if (hitTest(o, x, y)) return o
   }
   return null
 }
@@ -359,31 +361,49 @@ function renderObjects() {
   const room = activeRoom()
   if (!room) return
   for (const o of room.objects) {
+    if (o.hidden) continue
     const node = renderObject(o)
     if (node) objectLayer.appendChild(node)
   }
 }
 
 function renderObject(o) {
-  const s = styleFor(o)
   let el
-  if (o.kind === 'rect') {
+
+  if (o.kind === 'image') {
+    el = document.createElementNS(SVG_NS, 'image')
+    el.setAttribute('x', o.x); el.setAttribute('y', o.y)
+    el.setAttribute('width',  Math.max(1, o.w))
+    el.setAttribute('height', Math.max(1, o.h))
+    el.setAttribute('href', o.src)
+    el.setAttribute('preserveAspectRatio', 'none')
+    el.setAttribute('opacity', o.opacity ?? 0.6)
+  } else if (o.kind === 'rect') {
+    const s = styleFor(o)
     el = document.createElementNS(SVG_NS, 'rect')
     el.setAttribute('x', o.x); el.setAttribute('y', o.y)
     el.setAttribute('width',  o.w); el.setAttribute('height', o.h)
+    el.setAttribute('fill',         s.fill)
+    el.setAttribute('fill-opacity', s.fillOpacity)
+    el.setAttribute('stroke',       s.stroke)
+    el.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
+    el.setAttribute('vector-effect','non-scaling-stroke')
   } else if (o.kind === 'polygon') {
+    const s = styleFor(o)
     el = document.createElementNS(SVG_NS, o.vertices.length >= 3 ? 'polygon' : 'polyline')
     el.setAttribute('points', o.vertices.map(v => v.join(',')).join(' '))
+    el.setAttribute('fill',         s.fill)
+    el.setAttribute('fill-opacity', s.fillOpacity)
+    el.setAttribute('stroke',       s.stroke)
+    el.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
+    el.setAttribute('vector-effect','non-scaling-stroke')
   } else {
     return null
   }
-  el.setAttribute('fill',           s.fill)
-  el.setAttribute('fill-opacity',   s.fillOpacity)
-  el.setAttribute('stroke',         s.stroke)
-  el.setAttribute('stroke-width',   s.strokeWidth * pxToWorldDist(1))
-  el.setAttribute('vector-effect',  'non-scaling-stroke')
+
   el.dataset.objectId = o.id
   el.classList.add('plot-object', `plot-${o.type}`)
+  if (o.locked) el.classList.add('plot-locked')
   if (state.selection.includes(o.id)) el.classList.add('plot-selected')
   return el
 }
@@ -395,7 +415,8 @@ function renderHandles() {
   const hSize = pxToWorldDist(handlePx)
 
   for (const o of sel) {
-    if (o.kind === 'rect') {
+    if (o.hidden || o.locked) continue
+    if (o.kind === 'rect' || o.kind === 'image') {
       // Bounding box outline
       const box = document.createElementNS(SVG_NS, 'rect')
       box.setAttribute('x', o.x); box.setAttribute('y', o.y)

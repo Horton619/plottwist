@@ -5,7 +5,10 @@ import { initCanvas, fitToContent } from './canvas.js'
 import { initToolbar, selectTool } from './ui/toolbar.js'
 import { initProjectSidebar }      from './ui/projectSidebar.js'
 import { initObjectInfo }          from './ui/objectInfo.js'
+import { initObjectList }          from './ui/objectList.js'
 import { cancelPolygonDraw, finishPolygonDraw } from './tools/polygonTool.js'
+import { insertImageAt }           from './tools/imageTool.js'
+import { importImageSource }       from './imageImport.js'
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
@@ -19,6 +22,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   initToolbar(document.getElementById('toolbar'))
   initProjectSidebar(document.getElementById('sidebar'))
+  initObjectList(document.getElementById('layers'))
   initObjectInfo(document.getElementById('info'))
   initCanvas(document.getElementById('canvas'))
   initTitle()
@@ -28,6 +32,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.plottwist.onMenuEvent(handleMenuEvent)
   }
   bindKeyboard()
+  bindImageImport()
 })
 
 function initTitle() {
@@ -92,10 +97,11 @@ function bindKeyboard() {
 // ── File menu ──────────────────────────────────────────────────────────────
 
 async function handleMenuEvent(ev) {
-  if (ev === 'menu-new-project') return newProject()
-  if (ev === 'menu-open-project') return openProject()
-  if (ev === 'menu-save-project') return saveProject(false)
-  if (ev === 'menu-save-project-as') return saveProject(true)
+  if (ev === 'menu-new-project')       return newProject()
+  if (ev === 'menu-open-project')      return openProject()
+  if (ev === 'menu-save-project')      return saveProject(false)
+  if (ev === 'menu-save-project-as')   return saveProject(true)
+  if (ev === 'menu-insert-image')      return pickAndInsertImage()
   if (ev === 'menu-save-and-quit') {
     const ok = await saveProject(false)
     if (ok && window.plottwist) window.plottwist.quitNow()
@@ -131,6 +137,95 @@ async function openProject() {
   } catch (err) {
     alert(`Couldn't open project: ${err.message}`)
   }
+}
+
+// ── Image import (paste / drop / file picker) ────────────────────────────
+
+function bindImageImport() {
+  // The "+" button in the layers panel dispatches this event.
+  window.addEventListener('plottwist:insert-image', () => pickAndInsertImage())
+
+  // Clipboard paste anywhere in the app
+  window.addEventListener('paste', async (e) => {
+    const tag = e.target && e.target.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return    // don't steal text paste
+    const items = e.clipboardData && e.clipboardData.items
+    if (!items) return
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const blob = item.getAsFile()
+        if (blob) {
+          e.preventDefault()
+          await importAndInsert(blob, null)
+        }
+        return
+      }
+    }
+  })
+
+  // Drop files onto the canvas
+  const canvasEl = document.getElementById('canvas')
+  canvasEl.addEventListener('dragover', (e) => {
+    if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+      canvasEl.classList.add('dropping')
+    }
+  })
+  canvasEl.addEventListener('dragleave', () => canvasEl.classList.remove('dropping'))
+  canvasEl.addEventListener('drop', async (e) => {
+    canvasEl.classList.remove('dropping')
+    if (!e.dataTransfer || !e.dataTransfer.files.length) return
+    e.preventDefault()
+    // Compute drop point in world coords
+    const svg = canvasEl.querySelector('svg')
+    const rect = svg.getBoundingClientRect()
+    const sx = (e.clientX - rect.left) / rect.width
+    const sy = (e.clientY - rect.top)  / rect.height
+    const v = state.viewport
+    const point = { x: v.x + sx * v.w, y: v.y + sy * v.h }
+    for (const file of e.dataTransfer.files) {
+      await importAndInsert(file, point)
+    }
+  })
+}
+
+async function pickAndInsertImage() {
+  if (!window.plottwist) return
+  const res = await window.plottwist.openImageDialog()
+  if (res.canceled || !res.filePaths || !res.filePaths.length) return
+  for (const path of res.filePaths) {
+    try {
+      const buf = await window.plottwist.readBinaryFile(path)
+      // IPC delivers Buffer as Uint8Array; normalize to ArrayBuffer.
+      const ab = (buf.buffer && buf.byteLength != null)
+        ? buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+        : buf
+      const name = path.split(/[\\/]/).pop()
+      const mime = sniffMimeFromName(name)
+      const data = await importImageSource({ arrayBuffer: ab, mimeType: mime, name })
+      insertImageAt(data, null)
+    } catch (err) {
+      console.error('image import failed', err)
+      alert(`Couldn't import "${path.split(/[\\/]/).pop()}": ${err.message}`)
+    }
+  }
+}
+
+async function importAndInsert(blobOrFile, worldPoint) {
+  try {
+    const data = await importImageSource(blobOrFile)
+    insertImageAt(data, worldPoint)
+  } catch (err) {
+    console.error('image import failed', err)
+    alert(`Couldn't import image: ${err.message}`)
+  }
+}
+
+function sniffMimeFromName(name) {
+  const ext = (name.match(/\.([^.]+)$/) || [])[1]
+  const map = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', pdf: 'application/pdf' }
+  return map[String(ext || '').toLowerCase()] || ''
 }
 
 async function saveProject(forceDialog) {

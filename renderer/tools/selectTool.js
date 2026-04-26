@@ -7,11 +7,11 @@ import { state, mutateProject, selectedObjects, activeRoom } from '../state.js'
 export function startSelectDrag(mode, opts) {
   // Snapshot the original geometry of every selected object so we can compute
   // deltas relative to drag-start — avoids drift from accumulating rounding.
-  const sel = selectedObjects()
+  const sel = selectedObjects().filter(o => !o.locked && !o.hidden)
   const snapshot = new Map()
   for (const o of sel) {
-    if (o.kind === 'rect')    snapshot.set(o.id, { x: o.x, y: o.y, w: o.w, h: o.h })
-    if (o.kind === 'polygon') snapshot.set(o.id, { vertices: o.vertices.map(v => v.slice()) })
+    if (o.kind === 'rect' || o.kind === 'image') snapshot.set(o.id, { x: o.x, y: o.y, w: o.w, h: o.h })
+    if (o.kind === 'polygon')                    snapshot.set(o.id, { vertices: o.vertices.map(v => v.slice()) })
   }
   return { mode, ...opts, snapshot }
 }
@@ -26,9 +26,10 @@ export function updateSelectDrag(drag, world) {
     mutateProject(() => {
       for (const o of room.objects) {
         if (!state.selection.includes(o.id)) continue
+        if (o.locked || o.hidden) continue
         const orig = drag.snapshot.get(o.id)
         if (!orig) continue
-        if (o.kind === 'rect') {
+        if (o.kind === 'rect' || o.kind === 'image') {
           o.x = orig.x + dx
           o.y = orig.y + dy
         } else if (o.kind === 'polygon') {
@@ -40,8 +41,8 @@ export function updateSelectDrag(drag, world) {
   }
 
   if (drag.mode === 'resize') {
-    const target = selectedObjects()[0]
-    if (!target || target.kind !== 'rect') return
+    const target = selectedObjects().find(o => drag.snapshot.has(o.id))
+    if (!target || (target.kind !== 'rect' && target.kind !== 'image')) return
     const orig = drag.snapshot.get(target.id)
     if (!orig) return
     let { x, y, w, h } = orig

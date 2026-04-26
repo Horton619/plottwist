@@ -12,6 +12,7 @@
     "url": "https://github.com/Horton619/plottwist.git"
   },
   "scripts": {
+    "postinstall": "node scripts/copy-vendor.js",
     "start": "electron .",
     "build:mac:dir": "electron-builder --mac --dir",
     "build:win": "electron-builder --win --dir",
@@ -27,7 +28,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.1.0",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38"
   },
   "build": {
     "appId": "net.veproductions.plottwist",
@@ -54,23 +56,45 @@
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "target": [
-        { "target": "dmg", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "identity": null
     },
     "dmg": {
       "background": "build/dmg-bg.png",
       "iconSize": 100,
-      "window": { "width": 540, "height": 380 },
+      "window": {
+        "width": 540,
+        "height": 380
+      },
       "contents": [
-        { "x": 175, "y": 245, "type": "file" },
-        { "x": 385, "y": 245, "type": "link", "path": "/Applications" }
+        {
+          "x": 175,
+          "y": 245,
+          "type": "file"
+        },
+        {
+          "x": 385,
+          "y": 245,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {

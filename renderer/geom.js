@@ -13,13 +13,13 @@ export function polygonArea(verts) {
 }
 
 export function objectArea(o) {
-  if (o.kind === 'rect')    return rectArea(o)
+  if (o.kind === 'rect' || o.kind === 'image') return rectArea(o)
   if (o.kind === 'polygon') return polygonArea(o.vertices)
   return 0
 }
 
 export function objectBounds(o) {
-  if (o.kind === 'rect') {
+  if (o.kind === 'rect' || o.kind === 'image') {
     return { x: o.x, y: o.y, w: o.w, h: o.h }
   }
   if (o.kind === 'polygon') {
@@ -81,7 +81,7 @@ export function pointInRect(px, py, r) {
 }
 
 export function hitTest(o, px, py) {
-  if (o.kind === 'rect')    return pointInRect(px, py, o)
+  if (o.kind === 'rect' || o.kind === 'image') return pointInRect(px, py, o)
   if (o.kind === 'polygon') {
     if (o.vertices.length < 3) return false
     return pointInPolygon(px, py, o.vertices)

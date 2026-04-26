@@ -67,6 +67,25 @@ export const TYPE_STYLES = {
   stage:       { fill: '#2d5a8a', fillOpacity: 0.32, stroke: '#5a8ec5', strokeWidth: 1.5, label: 'Stage' },
   tech:        { fill: '#5a3d7f', fillOpacity: 0.32, stroke: '#8c63b8', strokeWidth: 1.5, label: 'Tech Table' },
   walls:       { fill: 'none',    fillOpacity: 0,    stroke: '#f1f3f8', strokeWidth: 2.5, label: 'Walls' },
+  underlay:    { fill: 'none',    fillOpacity: 0,    stroke: 'none',    strokeWidth: 0,   label: 'Underlay' },
+}
+
+// Auto-generate a friendly name when an object doesn't have one yet.
+export function objectName(obj, room) {
+  if (obj.name) return obj.name
+  const label = (TYPE_STYLES[obj.type] && TYPE_STYLES[obj.type].label) || obj.type
+  if (!room) return label
+  const sameType = room.objects.filter(o => o.type === obj.type)
+  if (sameType.length <= 1) return label
+  const idx = sameType.indexOf(obj) + 1
+  return `${label} ${idx}`
+}
+
+// Move an object's array index. fromIdx → toIdx (within room.objects).
+export function reorderObject(room, fromIdx, toIdx) {
+  if (fromIdx === toIdx) return
+  const [item] = room.objects.splice(fromIdx, 1)
+  room.objects.splice(toIdx, 0, item)
 }
 
 export function styleFor(obj) {

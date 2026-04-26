@@ -66,7 +66,9 @@ function createWindow() {
         { label: 'New Project',       accelerator: 'CmdOrCtrl+Shift+N', click: () => mainWindow.webContents.send('menu-new-project') },
         { label: 'Open Project…',     accelerator: 'CmdOrCtrl+O',       click: () => mainWindow.webContents.send('menu-open-project') },
         { label: 'Save Project',      accelerator: 'CmdOrCtrl+S',       click: () => mainWindow.webContents.send('menu-save-project') },
-        { label: 'Save Project As…',  accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('menu-save-project-as') }
+        { label: 'Save Project As…',  accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('menu-save-project-as') },
+        { type: 'separator' },
+        { label: 'Insert Image…',     accelerator: 'CmdOrCtrl+Shift+I', click: () => mainWindow.webContents.send('menu-insert-image') }
       ]
     },
     {
@@ -138,6 +140,22 @@ ipcMain.handle('save-project-dialog', async (_e, defaultName) => {
     defaultPath: defaultName || 'Untitled.ptwist',
     filters: [{ name: 'PlotTwist Project', extensions: ['ptwist'] }]
   })
+})
+
+ipcMain.handle('open-image-dialog', async () => {
+  return dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Images and PDFs', extensions: ['png', 'jpg', 'jpeg', 'pdf'] },
+      { name: 'PNG',              extensions: ['png'] },
+      { name: 'JPEG',             extensions: ['jpg', 'jpeg'] },
+      { name: 'PDF',              extensions: ['pdf'] }
+    ]
+  })
+})
+
+ipcMain.handle('read-binary-file', (_e, filePath) => {
+  return fs.readFileSync(filePath)
 })
 
 ipcMain.handle('export-image-dialog', async (_e, defaultName) => {

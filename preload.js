@@ -4,17 +4,19 @@ contextBridge.exposeInMainWorld('plottwist', {
   // File dialogs
   openProjectDialog:  ()             => ipcRenderer.invoke('open-project-dialog'),
   saveProjectDialog:  (defaultName)  => ipcRenderer.invoke('save-project-dialog', defaultName),
+  openImageDialog:    ()             => ipcRenderer.invoke('open-image-dialog'),
   exportImageDialog:  (defaultName)  => ipcRenderer.invoke('export-image-dialog', defaultName),
 
   // File system
   readFile:           (filePath)              => ipcRenderer.invoke('read-file', filePath),
+  readBinaryFile:     (filePath)              => ipcRenderer.invoke('read-binary-file', filePath),
   writeFile:          (filePath, content)     => ipcRenderer.invoke('write-file', filePath, content),
   writeBinaryFile:    (filePath, base64)      => ipcRenderer.invoke('write-binary-file', filePath, base64),
   showItemInFolder:   (filePath)              => ipcRenderer.invoke('show-item-in-folder', filePath),
 
   // App menu events
   onMenuEvent: (cb) => {
-    const events = ['menu-new-project', 'menu-open-project', 'menu-save-project', 'menu-save-project-as', 'menu-save-and-quit']
+    const events = ['menu-new-project', 'menu-open-project', 'menu-save-project', 'menu-save-project-as', 'menu-save-and-quit', 'menu-insert-image']
     events.forEach(ev => ipcRenderer.on(ev, () => cb(ev)))
   },
 

@@ -97,6 +97,7 @@ input {
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr var(--info-w);
   background: var(--bg);
+  min-height: 0;
 }
 
 .pane { overflow: hidden; }
@@ -241,6 +242,15 @@ input {
   overflow: hidden;
   min-height: 0;
 }
+.canvas-pane.dropping::after {
+  content: '';
+  position: absolute; inset: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  pointer-events: none;
+  z-index: 5;
+}
 .canvas-frame { position: absolute; inset: 0; }
 .floor-svg {
   position: absolute; inset: 0;
@@ -326,12 +336,112 @@ input {
 .canvas-status b { color: var(--text-dim); font-weight: 500; }
 .canvas-status .status-hint { margin-left: auto; color: var(--text-faint); opacity: 0.7; }
 
+/* ─── Right pane (Layers + Info, stacked) ──────────────────────────────── */
+
+.right-pane {
+  background: var(--bg-panel);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.layers-host {
+  flex: 0 1 auto;
+  min-height: 120px;
+  max-height: 45%;
+  display: flex; flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.info-host {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ─── Layers panel ─────────────────────────────────────────────────────── */
+
+.layers-panel { display: flex; flex-direction: column; height: 100%; }
+
+.layers-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  height: var(--toolbar-h);
+  flex: 0 0 auto;
+}
+.layers-title {
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.layers-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 4px 8px;
+}
+.layers-empty {
+  padding: 14px 12px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.layer-row {
+  display: grid;
+  grid-template-columns: 18px 18px 10px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  margin-bottom: 1px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 11.5px;
+  user-select: none;
+}
+.layer-row:hover { background: var(--bg-panel-2); }
+.layer-row.active {
+  background: var(--bg-panel-2);
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.layer-row.hidden { opacity: 0.45; }
+.layer-row.locked .layer-name { color: var(--text-dim); }
+.layer-row.dragging { opacity: 0.4; }
+.layer-row.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+.layer-row.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+
+.layer-toggle {
+  width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px;
+  color: var(--text-faint);
+  border-radius: 3px;
+  line-height: 1;
+}
+.layer-toggle:hover { color: var(--text); background: var(--bg); }
+.layer-toggle.visibility.on  { color: var(--text-dim); }
+.layer-toggle.visibility.off { color: var(--text-faint); }
+.layer-toggle.lock.on        { color: var(--accent); }
+
+.layer-swatch {
+  width: 8px; height: 14px;
+  border-radius: 2px;
+}
+.layer-name {
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.layer-type {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: lowercase;
+  letter-spacing: 0.3px;
+}
+
 /* ─── Info panel ───────────────────────────────────────────────────────── */
 
-.info-pane {
-  background: var(--bg-panel);
-  overflow-y: auto;
-}
 .info-panel { padding: 0; }
 
 .panel-section {
@@ -345,6 +455,20 @@ input {
   color: var(--text);
   margin-bottom: 2px;
 }
+
+.title-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  color: var(--text);
+  font: inherit; font-weight: 600;
+  outline: none;
+}
+.title-input:hover  { border-color: var(--border); }
+.title-input:focus  { border-color: var(--accent); background: var(--bg); }
 .panel-sub {
   font-size: 11px;
   color: var(--text-faint);
@@ -379,6 +503,7 @@ input {
   margin-left: auto;
 }
 .prop-val.accent { color: var(--accent); }
+.prop-val.small  { font-size: 10.5px; min-width: 32px; text-align: right; }
 
 .prop-input {
   flex: 1;

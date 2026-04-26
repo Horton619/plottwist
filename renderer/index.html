@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; connect-src 'self' data: blob:">
   <title>PlotTwist — Untitled</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -21,7 +21,10 @@
       <div id="toolbar" class="pane toolbar-pane"></div>
       <div id="canvas"  class="pane canvas-pane"></div>
     </section>
-    <aside id="info" class="pane info-pane"></aside>
+    <aside class="pane right-pane">
+      <div id="layers" class="layers-host"></div>
+      <div id="info"   class="info-host"></div>
+    </aside>
   </div>
 
   <footer class="vep-footer">
