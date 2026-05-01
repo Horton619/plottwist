@@ -20,9 +20,11 @@ Reference outputs (style we want to produce): magenta annotation callouts on a c
 
 ## Stack
 
-- **Electron** + vanilla HTML/CSS/JS renderer (per VEP family)
-- **SVG** for the floorplan canvas — every object is a clickable DOM node, makes selection/handles/transforms easy and exports to PDF as true vectors
+- **Electron** + vanilla HTML/CSS/JS renderer with native ES modules (per VEP family, no bundler)
+- **SVG** for the floorplan canvas — every object is a clickable DOM node, makes selection/handles/transforms easy and exports to PDF as true vectors. World units = integer inches, expressed directly in the SVG `viewBox`.
 - **No Python.** Unlike SlideFluid (PPTX parsing) and FlowCast (video), PlotTwist is pure geometry + rendering. PNG export via SVG → canvas/dataURL. PDF export via `pdf-lib` or Electron's built-in `webContents.printToPDF()`.
+- **pdfjs-dist** for rasterizing dropped/pasted PDF underlays (page 1 → PNG at 2× scale, baked into the project file as base64). Vendored into `renderer/vendor/pdfjs/` by `scripts/copy-vendor.js`, lazy-loaded.
+- **polygon-clipping** for boolean operations on rect/polygon shapes (Join → Polygon today; Subtract / Intersect when we add them). Vendored as a UMD bundle, loaded with a classic `<script>` so it attaches to `window.polygonClipping`.
 - **electron-builder** for .dmg / .exe packaging
 - **electron-updater** for auto-updates via GitHub Releases
 - **GitHub Actions** for CI: Mac arm64 + Windows x64 (mirroring FlowCast's working pipeline, minus the Python job)
@@ -187,12 +189,17 @@ Project (.ptwist file, JSON)
 
 ## Out of scope for v1
 
-- **Underlay tracing** — drop a PNG/PDF of an existing floorplan and trace over it. Useful when a venue sends a PDF you want to copy from. Polygon tool covers most needs without it. Defer to v2.
 - **Curved walls / arc segments.** Polygon tool with straight edges only in v1.
 - **Metric units.**
 - **Cloud sync / multi-user.**
 - **Real Vectorworks file IO.**
 - **Aisle-split mixed-style rows.**
+- **Multi-page PDF underlays.** Page 1 only when a PDF is imported. v2.
+- **External image storage / sidecar files.** Underlays are base64-embedded in the `.ptwist` JSON; that gets heavy for ≥ ~5MB images. v2 splits them into a sidecar folder.
+
+### Already pulled forward from v2
+
+- **Underlay tracing** — drop/paste/import PNG/JPG/PDF, two-click + distance calibration, trace over with the Walls polygon tool. Shipped.
 
 ---
 
@@ -219,50 +226,127 @@ Project (.ptwist file, JSON)
 
 ---
 
+## Lessons from PlotTwist build sessions (so far)
+
+**Vendoring runtime libs (`renderer/vendor/`) instead of bundling.**
+A `postinstall` step (`scripts/copy-vendor.js`) copies third-party files from `node_modules` into `renderer/vendor/` (gitignored). Keeps the renderer CSP simple (`'self'`) without adding a bundler.
+- ESM libs with workers (pdfjs-dist): copy `pdf.mjs` + `pdf.worker.mjs`, set `GlobalWorkerOptions.workerSrc = './vendor/pdfjs/pdf.worker.mjs'`. Lazy-import via `await import()` so the library only loads when needed.
+- UMD libs that need globals (polygon-clipping): copy the UMD file and load it via a classic `<script>` in `index.html` *before* the module script. The UMD attaches to `window.<name>` for the modules to reference.
+
+**CSP for renderer with images + workers** — needed to add to the default `'self'`:
+
+```
+script-src 'self' 'wasm-unsafe-eval';
+worker-src 'self' blob:;
+img-src   'self' data: blob:;
+connect-src 'self' data: blob:;
+```
+
+`img-src data:` is the one that bites — `<image href="data:...">` for embedded underlays silently 404s without it. `wasm-unsafe-eval` is required by some pdfjs decoding paths.
+
+**SVG canvas with `viewBox` in inches.** Pan = shift origin; zoom = scale `w`/`h`. For cursor-anchored zoom, keep the world point under the cursor stationary across the transform. Use `vector-effect="non-scaling-stroke"` on every handle/stroke so they stay constant pixel-size regardless of zoom. Tag SVG elements with `data-*` attributes and hit-test via `event.target.closest('[data-attr]')` in pointerdown — no manual hit-testing needed for handles.
+
+**Tiny pub-sub state (`state.js`).** `subscribe`, `notify`, `mutateProject` (flips dirty + notifies), `setState` (just notifies). Whole-tree re-render on every change is fine for a few hundred objects. Drag interactions mutate in place during the gesture; commit on `pointerup` is implicit.
+
+**Tool dispatch.** A single `onPointerDown` that checks mode flags (`spaceDown`, `state.calibration`, drawing-polygon) in priority order, then falls through to per-tool logic. Avoids fragile per-tool listener juggling.
+
+**Calibration mode pattern.** A top-level state flag (`state.calibration`) gates *click* dispatch and shows a banner overlay. Wheel-based pan/zoom must NOT be gated on the flag — keep navigation always-on so users can frame their reference points. Add space-bar drag as a universal pan escape hatch.
+
+**Boolean operations** (polygon-clipping). Watch for two error cases the lib will hand back: disjoint inputs returning a multi-polygon, and outputs with holes — both need user-facing errors since v1 doesn't model multipolygons or holes.
+
+**Image data URLs in `.ptwist`.** Simple, single-file projects, but a 4MB PNG becomes ~5.3MB of base64. v2 will sidecar large images.
+
+**Render order vs. layer-panel order.** The internal `room.objects[]` is bottom-of-stack first (last in array renders on top, painting over earlier ones). The Photoshop-convention layers panel reads top-down, so the panel reverses the array on render. Drag-reorder math has to translate visual above/below into array index moves — easy to get backwards.
+
+---
+
 ## Repo
 
 `Horton619/plottwist` — release on `v*` tag push, ad-hoc signed only (no Apple Developer account).
 
 ---
 
-## Initial scaffold target
+## Current file layout
 
 ```
 PlotTwist/
-├── package.json           # electron, electron-builder, electron-updater, pdf-lib
-├── main.js                # Electron main, window, IPC, project file I/O
-├── preload.js             # contextBridge → window.plottwist
+├── package.json
+├── main.js                    # Electron main, IPC, window, menus
+├── preload.js                 # contextBridge → window.plottwist
+├── scripts/
+│   └── copy-vendor.js         # postinstall: vendor pdfjs + polygon-clipping
 ├── renderer/
-│   ├── index.html
-│   ├── styles.css
-│   ├── app.js             # top-level state + layout switching
-│   ├── canvas.js          # SVG scene, pan/zoom, selection, handles
-│   ├── tools/             # rectTool.js, aisleTool.js, seatTool.js, ...
-│   ├── solver/            # capacitySolver.js, layoutEngine.js, fireCode.js
-│   └── ui/                # objectInfo.js, projectSidebar.js, toolbar.js
+│   ├── index.html             # CSP, vendor script tag, app.js entry
+│   ├── styles.css             # navy + magenta chrome, layers panel, calibration banner
+│   ├── app.js                 # entry: keyboard, file menu, image import, shape clipboard
+│   ├── state.js               # pub-sub state, project model, type styles, reorder/name helpers
+│   ├── geom.js                # bounds, area, hit-test, segment distance, 45° snap
+│   ├── units.js               # parseInches / formatInches / formatSqFt
+│   ├── canvas.js              # SVG scene, pan/zoom, calibration, midpoint handles
+│   ├── shapeOps.js            # polygon-clipping wrapper (union; subtract/intersect later)
+│   ├── imageImport.js         # PNG/JPG/PDF → data URL (lazy pdfjs)
+│   ├── tools/
+│   │   ├── rectTool.js
+│   │   ├── polygonTool.js
+│   │   ├── selectTool.js
+│   │   └── imageTool.js
+│   ├── ui/
+│   │   ├── toolbar.js
+│   │   ├── projectSidebar.js
+│   │   ├── objectList.js      # Photoshop-style layers panel
+│   │   ├── objectInfo.js
+│   │   └── icons.js           # inline SVG icons (eye / lock)
+│   └── vendor/                # gitignored; populated by `npm install`
+│       ├── pdfjs/
+│       └── polygon-clipping/
 ├── data/
-│   └── fireCode.json
-├── build/                 # icons, dmg-background
-├── .github/workflows/release.yml
+│   └── fireCode.json          # placeholder {} — populate during fire-code step
+├── build/                     # icons, dmg-bg (TBD)
+├── .github/workflows/         # release.yml — TBD
 ├── .gitignore
 └── CLAUDE.md
 ```
 
+**`.ptwist` project file** is JSON: `{ version, rooms: [{ id, name, objects: [...] }] }`. Each object has `id`, `kind` (rect / polygon / image), `type` (floor / aisle / obstruction / stage / tech / walls / underlay), plus geometry and the optional `name`, `hidden`, `locked`, `fill`, `fillOpacity`, `stroke`, `strokeWidth`, `opacity` overrides. Underlay images are base64-embedded.
+
 ---
 
-## Build order (rough roadmap)
-
-1. **Scaffold** — Electron skeleton, navy + magenta chrome, footer, empty SVG canvas
-2. **Room construction** — rectangle tool, handles, tab-to-type, Object Info panel
-3. **Object types** — toolbar, floor/aisle/obstruction/stage/tech table, fill/stroke/name controls
-4. **Project model** — save/load .ptwist files, rooms + layouts sidebar
-5. **Theater solver** — single-style, fits target into a zone with fire-code-aware spacing
-6. **Classroom solver** — single-style, table-aware
-7. **Rounds solver** — full + crescent
-8. **Mixed solver** — theater + classroom in one zone, optimize for preference
-9. **Fire code engine** — load jurisdictions, validate live, magenta callouts on violations
-10. **Export** — PNG and PDF with annotation overlay
-11. **CI / release** — GitHub Actions, draft promotion, ad-hoc signing
-12. **Diagnostics tab** — preflight, log tail, auto-updater UI
+## Build order — progress + queue
 
 Don't build ahead. Each step ships before the next starts.
+
+### Done
+
+1. ✅ **Scaffold** — Electron skeleton, navy + magenta chrome, footer, console-forwarding in dev.
+2. ✅ **Room construction** — rectangle tool for floor/aisle/obstruction/stage/tech, walls polygon tool with shift-snap (0/45/90°), corner + mid-edge handles, right-click vertex insert/delete, ⌘6 fit, multi-room sidebar with new/rename/delete.
+3. ✅ **Object types + Object Info** — full toolbar, fill/stroke/opacity per object, name field, area + bounds + per-vertex coords, live W/H/X/Y inputs (parse `24'`, `24'-6"`, `36"`, bare inches).
+4. ⚠ **Project model** — `.ptwist` save/load shipped. **Layouts-within-rooms is NOT yet built**: rooms own objects directly; the spec wants rooms to share geometry across multiple layouts (Theater 220, Mixed 175, etc.). Wire that nesting before the solver lands so seating zones can swap without touching room geometry.
+
+### Pulled forward from v2
+
+- ✅ **Underlay import** — PNG / JPG / PDF via file picker, drag-drop, ⌘V paste. PDFs lazy-load pdfjs at import time, page 1 → PNG at 2× scale, baked into the project as base64.
+- ✅ **Two-click + distance calibration** with first-point pinned. Re-callable via the **Set Scale…** button on a selected underlay.
+- ✅ **Photoshop-style layers panel** — visibility / lock SVG icons, drag-reorder, right-click Duplicate/Delete, double-click rename, top-of-list = top-of-stack.
+- ✅ **Boolean Union** (Join → Polygon) via vendored polygon-clipping. Subtract / Intersect not yet wired but the lib is available.
+- ✅ **Shape clipboard** — ⌘C / ⌘X / ⌘V on rect / polygon objects. Image clipboard takes priority on paste so a copied screenshot still rasterizes.
+- ✅ **Universal pan** — wheel + ⇧wheel + space-bar drag (or middle-mouse drag) work in any mode including calibration.
+
+### Next up (priority order)
+
+5. ◻ **Layouts within rooms** — nest each room's seating layouts under `Layouts[]` per the original spec; sidebar reflects "room → layouts" hierarchy. Lands BEFORE the theater solver so it has a place to live.
+6. ◻ **Theater solver** — single-style, scan-line fit into a zone polygon with fire-code-aware spacing. 12-per-row default, 20" front-to-front, 12'/6' aisle.
+7. ◻ **Classroom solver** — single-style, table-aware (6'×18", 6'×30", 8'×18", 8'×30").
+8. ◻ **Rounds solver** — full + crescent (60", 72").
+9. ◻ **Mixed solver** — theater + classroom in one zone, optimize for `max classroom` / `max theater` / `exact count`.
+10. ◻ **Fire code engine** — load jurisdictions from `data/fireCode.json` (Cook, Clark, Buena Vista, Reidy Creek), validate live, render magenta callouts on violations.
+11. ◻ **Export** — PNG (raster) + PDF (vector via `pdf-lib`) with annotation overlay.
+12. ◻ **Boolean Subtract / Intersect** — same UI pattern as Join, separate buttons in the multi-select Object Info panel.
+13. ◻ **CI / release** — GitHub Actions per FlowCast pattern: Mac arm64 + Windows x64, ad-hoc Mac signing, draft promotion via `gh release edit … --draft=false --latest`.
+14. ◻ **Diagnostics tab** — preflight check, log tail, auto-updater UI.
+
+### Backlog / nice-to-have
+
+- Tab-to-type in canvas (currently the right-panel inputs cover the same ground; defer until users miss it).
+- Calibration on per-image basis with a stored `pxPerInch` so the underlay can be re-rendered at known scales.
+- Multi-image batch calibration — currently each new import clobbers the previous calibration session.
+- Underlay sidecar storage to keep `.ptwist` files small.
