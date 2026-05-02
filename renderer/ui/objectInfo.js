@@ -45,7 +45,13 @@ export function initObjectInfo(host) {
     }
     if (sel.length > 1) {
       const totalArea = sel.reduce((a, o) => a + objectArea(o), 0)
-      const joinable = sel.every(o => o.kind === 'rect' || o.kind === 'polygon')
+      // Boolean ops mutate venue (room) shapes only. If any selected object
+      // lives in a layout (aisle, seating zone, etc.) we hide the buttons
+      // rather than risk leaving zombie objects in layout.objects.
+      const room = activeRoom()
+      const allRoomObjs   = sel.every(o => room.objects.includes(o))
+      const joinable = allRoomObjs && sel.every(o => o.kind === 'rect' || o.kind === 'polygon')
+      const mixedContainers = sel.every(o => o.kind === 'rect' || o.kind === 'polygon') && !allRoomObjs
       panel.innerHTML = `
         <div class="panel-section">
           <div class="panel-title">${sel.length} objects selected</div>
@@ -58,6 +64,11 @@ export function initObjectInfo(host) {
             <button class="block-btn" data-action="subtract">Subtract</button>
             <button class="block-btn" data-action="intersect">Intersect</button>
             <p class="panel-hint">Subtract: bottom layer minus the rest. Intersect: keep only the overlap.</p>
+          </div>
+        ` : mixedContainers ? `
+          <div class="panel-section">
+            <div class="panel-section-title">Boolean</div>
+            <p class="panel-hint warn">Boolean ops only run on venue shapes. Layout objects (aisles, seating) can't be merged.</p>
           </div>
         ` : ''}
       `
@@ -630,6 +641,13 @@ function applyBoolean(opLabel, opFn) {
 
   const room = activeRoom()
   if (!room) return
+  // Defensive — the panel should already hide the buttons, but if any selected
+  // object isn't in the active room's objects[] we'd leave it as a zombie in
+  // its layout. Bail with a clear message instead.
+  if (!sel.every(o => room.objects.includes(o))) {
+    alert(`${opLabel}: only venue shapes can be combined. Move shapes between containers first.`)
+    return
+  }
   // Sort by ROOM stack order — earlier index = bottom-most. selection[] order
   // is click order, which isn't what we want for Subtract semantics.
   const indexOf = (o) => room.objects.indexOf(o)

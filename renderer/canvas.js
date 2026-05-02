@@ -248,7 +248,7 @@ function onPointerDown(e) {
       const layout  = activeLayout()
       const aisle   = (layout?.objects || []).find(o => o.id === aisleId)
                    || room.objects.find(o => o.id === aisleId)
-      if (aisle) {
+      if (aisle && !aisle.locked && !aisle.hidden) {
         beginTransaction()
         drag = {
           mode: 'aisle-dim',

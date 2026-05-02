@@ -287,11 +287,13 @@ function newProject() {
     rooms: [{ id: roomId, name: 'Room 1', objects: [], layouts: [{ id: layoutId, name: 'Layout 1', hidden: false, locked: false, objects: [] }] }],
     origin:     { x: 0, y: 0 },
     centerline: { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 },
+    fireCode:   { jurisdictions: [] },
   }
   state.activeRoomId = roomId
   state.activeLayoutId = layoutId
   state.selection = []
   state.filePath = null
+  state.fireMarshal = null     // wipe any previous run's red callouts and sheet state
   clearHistory()
   markClean(null)
   fitToContent()
@@ -318,10 +320,12 @@ async function openProject() {
       rooms: data.rooms,
       origin:     data.origin     ?? { x: 0, y: 0 },
       centerline: data.centerline ?? { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 },
+      fireCode:   data.fireCode   ?? { jurisdictions: [] },
     }
     state.activeRoomId = data.rooms[0] ? data.rooms[0].id : null
     state.activeLayoutId = data.rooms[0]?.layouts?.[0]?.id ?? null
     state.selection = []
+    state.fireMarshal = null     // dismiss any stale callouts from the previous project
     clearHistory()
     markClean(path)
     fitToContent()
@@ -565,9 +569,10 @@ async function saveProject(forceDialog) {
   }
   const data = JSON.stringify({
     version: 1,
-    rooms: state.project.rooms,
-    origin: state.project.origin,
+    rooms:      state.project.rooms,
+    origin:     state.project.origin,
     centerline: state.project.centerline,
+    fireCode:   state.project.fireCode,    // active jurisdictions live with the venue
   }, null, 2)
   try {
     await window.plottwist.writeFile(path, data)
