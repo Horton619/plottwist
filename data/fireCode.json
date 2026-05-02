@@ -1,1 +1,107 @@
-{}
+{
+  "version": 1,
+  "_disclaimer": "Seed values pulled from IBC 2018, NFPA 101, FBC, CBC, and Chicago Construction Code references. Every rule is marked verify=true — DO NOT treat any number here as authoritative. Use it as a planning aid; the AHJ governs.",
+
+  "rules": {
+    "aisleMinWidth": {
+      "label": "Min aisle width",
+      "unit": "in",
+      "appliesTo": ["aisle"],
+      "description": "Minimum clear width of an aisle in a place of public assembly. The strictest active jurisdiction wins."
+    },
+    "aisleCapacityFactor": {
+      "label": "Aisle width per occupant",
+      "unit": "in/occ",
+      "appliesTo": ["aisle"],
+      "description": "Aisle width must also be at least (occupants served × this factor). Validated as max(aisleMinWidth, occupants × factor)."
+    },
+    "theaterRowClearMin": {
+      "label": "Min clear between rows",
+      "unit": "in",
+      "appliesTo": ["theater", "mixed"],
+      "description": "Clear space between back of one row and front of the next (row pitch − chair depth)."
+    },
+    "maxSeatsRowOneAisle": {
+      "label": "Max seats per row, aisle at one end",
+      "unit": "count",
+      "appliesTo": ["theater", "mixed"],
+      "description": "Rows that egress to an aisle at only one end."
+    },
+    "maxSeatsRowTwoAisles": {
+      "label": "Max seats per row, aisle at both ends",
+      "unit": "count",
+      "appliesTo": ["theater", "mixed"],
+      "description": "Rows that egress to aisles at both ends."
+    },
+    "roundsBackToBackMin": {
+      "label": "Min back-to-back chair spacing (rounds)",
+      "unit": "in",
+      "appliesTo": ["rounds"],
+      "description": "Minimum distance between the back of a chair at one round and the back of the chair at the adjacent round."
+    },
+    "stageClearanceMin": {
+      "label": "Min clearance front row to stage",
+      "unit": "in",
+      "appliesTo": ["theater", "classroom", "mixed", "rounds"],
+      "description": "Clearance between the leading edge of the stage and the nearest chair / table."
+    }
+  },
+
+  "jurisdictions": {
+    "cook": {
+      "name": "Cook County / City of Chicago",
+      "basis": "Chicago Construction Code (CCC) Title 14B, based on IBC 2018 with amendments",
+      "values": {
+        "aisleMinWidth":        { "value": 44, "code": "CCC 14B-10-1029 / IBC 1029.9.1",  "verify": true, "note": "Chicago amendment for assembly aisles. IBC baseline is 48\" for >50 occupants." },
+        "aisleCapacityFactor":  { "value": 0.2,  "code": "IBC 1005.3.2",                   "verify": true, "note": "Level egress; stairs use 0.3 in/occ." },
+        "theaterRowClearMin":   { "value": 12,   "code": "IBC 1029.10",                    "verify": true, "note": "12\" minimum unaisled-access row clear." },
+        "maxSeatsRowOneAisle":  { "value": 14,   "code": "IBC 1029.9.1",                   "verify": true, "note": "Single-aisle row." },
+        "maxSeatsRowTwoAisles": { "value": 100,  "code": "IBC 1029.9.2",                   "verify": true, "note": "Both-end aisle access; smart-aisle rules can exceed this if egress sized accordingly." },
+        "roundsBackToBackMin":  { "value": 60,   "code": "Banquet planning convention",    "verify": true, "note": "Industry-standard 5′ minimum; 6′ preferred for high-density events." },
+        "stageClearanceMin":    { "value": 60,   "code": "Banquet planning convention",    "verify": true, "note": "5′ standoff to front row." }
+      }
+    },
+
+    "clark": {
+      "name": "Clark County, NV (Las Vegas)",
+      "basis": "Clark County Building Code, IBC 2018 with NFPA 101 referenced",
+      "values": {
+        "aisleMinWidth":        { "value": 48, "code": "IBC 1029.9.1",          "verify": true, "note": "Both-side assembly seating, >50 occupants." },
+        "aisleCapacityFactor":  { "value": 0.2,  "code": "IBC 1005.3.2",         "verify": true, "note": "" },
+        "theaterRowClearMin":   { "value": 12,   "code": "IBC 1029.10",          "verify": true, "note": "" },
+        "maxSeatsRowOneAisle":  { "value": 14,   "code": "IBC 1029.9.1",         "verify": true, "note": "" },
+        "maxSeatsRowTwoAisles": { "value": 100,  "code": "IBC 1029.9.2",         "verify": true, "note": "" },
+        "roundsBackToBackMin":  { "value": 60,   "code": "Convention",           "verify": true, "note": "" },
+        "stageClearanceMin":    { "value": 60,   "code": "Convention",           "verify": true, "note": "" }
+      }
+    },
+
+    "buenaVista": {
+      "name": "Buena Vista, FL (Disney FL / Reedy Creek)",
+      "basis": "Florida Building Code 8th ed (2023), former Reedy Creek Improvement District",
+      "values": {
+        "aisleMinWidth":        { "value": 48, "code": "FBC 1029.9.1",          "verify": true, "note": "FBC follows IBC for assembly." },
+        "aisleCapacityFactor":  { "value": 0.2,  "code": "FBC 1005.3.2",         "verify": true, "note": "" },
+        "theaterRowClearMin":   { "value": 12,   "code": "FBC 1029.10",          "verify": true, "note": "" },
+        "maxSeatsRowOneAisle":  { "value": 14,   "code": "FBC 1029.9.1",         "verify": true, "note": "" },
+        "maxSeatsRowTwoAisles": { "value": 100,  "code": "FBC 1029.9.2",         "verify": true, "note": "" },
+        "roundsBackToBackMin":  { "value": 60,   "code": "Convention",           "verify": true, "note": "" },
+        "stageClearanceMin":    { "value": 60,   "code": "Convention",           "verify": true, "note": "" }
+      }
+    },
+
+    "reidyCreek": {
+      "name": "Reidy Creek, CA (Disney CA / Anaheim)",
+      "basis": "California Building Code 2022 (Title 24 Part 2), Anaheim AHJ",
+      "values": {
+        "aisleMinWidth":        { "value": 48, "code": "CBC 1029.9.1",          "verify": true, "note": "CBC tracks IBC but is often more stringent for assembly." },
+        "aisleCapacityFactor":  { "value": 0.2,  "code": "CBC 1005.3.2",         "verify": true, "note": "" },
+        "theaterRowClearMin":   { "value": 12,   "code": "CBC 1029.10",          "verify": true, "note": "" },
+        "maxSeatsRowOneAisle":  { "value": 14,   "code": "CBC 1029.9.1",         "verify": true, "note": "" },
+        "maxSeatsRowTwoAisles": { "value": 100,  "code": "CBC 1029.9.2",         "verify": true, "note": "" },
+        "roundsBackToBackMin":  { "value": 72,   "code": "CA hospitality convention", "verify": true, "note": "CA event spaces commonly enforce 6′ round-to-round." },
+        "stageClearanceMin":    { "value": 72,   "code": "CA hospitality convention", "verify": true, "note": "" }
+      }
+    }
+  }
+}

@@ -8,10 +8,12 @@ import { state, setState, mutateProject, subscribe } from '../state.js'
 import { getSetting, setSetting, resetAllSettings, SETTINGS_DEFAULTS, onSettingsChange } from '../settings.js'
 import { formatInches, parseInches } from '../units.js'
 import { checkForUpdates, compareVersions } from '../updater.js'
+import { loadFireCodeData, getProjectJurisdictions } from '../fireMarshal.js'
 
 let modalEl = null
 let activeTab = 'workspace'
 let currentVersion = '0.0.0'
+let fireCodeData = null
 
 export async function initSettingsModal() {
   if (window.plottwist?.getAppVersion) {
@@ -63,6 +65,7 @@ function render() {
     <div class="settings-tabs">
       ${tabBtn('workspace', 'Workspace')}
       ${tabBtn('defaults',  'Defaults')}
+      ${tabBtn('fireCode',  'Fire Code')}
       ${tabBtn('updates',   'Updates')}
     </div>
     <div class="settings-body" data-body></div>
@@ -94,6 +97,7 @@ function renderTab(id) {
   wrap.className = 'settings-tab-content'
   if      (id === 'workspace') wrap.appendChild(renderWorkspaceTab())
   else if (id === 'defaults')  wrap.appendChild(renderDefaultsTab())
+  else if (id === 'fireCode')  wrap.appendChild(renderFireCodeTab())
   else if (id === 'updates')   wrap.appendChild(renderUpdatesTab())
   return wrap
 }
@@ -250,6 +254,68 @@ function renderDefaultsTab() {
   `
   wireSettingInputs(root)
   return root
+}
+
+// ── Tab: Fire Code ────────────────────────────────────────────────────────
+
+function renderFireCodeTab() {
+  const root = document.createElement('div')
+  root.className = 'settings-form'
+
+  // Lazy-load the JSON; show a spinner placeholder until it's in.
+  if (!fireCodeData) {
+    root.innerHTML = `<p class="settings-hint">Loading fire code data…</p>`
+    loadFireCodeData().then(d => { fireCodeData = d; if (isOpen() && activeTab === 'fireCode') render() })
+                      .catch(err => { root.innerHTML = `<p class="settings-hint warn">Couldn't load: ${err.message}</p>` })
+    return root
+  }
+
+  const active = new Set(getProjectJurisdictions(state.project))
+  const jurisdictionsHtml = Object.entries(fireCodeData.jurisdictions).map(([id, j]) => `
+    <label class="fc-juris-row">
+      <input type="checkbox" data-juris="${id}" ${active.has(id) ? 'checked' : ''}>
+      <div class="fc-juris-body">
+        <div class="fc-juris-name">${escape(j.name)}</div>
+        <div class="fc-juris-basis">${escape(j.basis)}</div>
+      </div>
+    </label>
+  `).join('')
+
+  root.innerHTML = `
+    <h3>Active Jurisdictions</h3>
+    <p class="settings-hint">When the Fire Marshal Check runs, the strictest active jurisdiction wins per rule. These are stored on the project so they travel with the .ptwist file.</p>
+    <div class="fc-juris-list">${jurisdictionsHtml}</div>
+
+    <h3>Notes</h3>
+    <p class="settings-hint">Defaults are seeded from public code references (IBC 2018, NFPA 101, FBC, CBC, Chicago Construction Code) and banquet planning conventions. <b>Verify with your AHJ before relying on this.</b></p>
+    <p class="settings-hint">Per-rule overrides aren't editable in v1 — open <code>data/fireCode.json</code> if you need to tweak a value.</p>
+
+    <h3>Rules in v1</h3>
+    <ul class="fc-rule-list">
+      ${Object.entries(fireCodeData.rules).map(([id, r]) =>
+        `<li><b>${escape(r.label)}</b><span class="fc-rule-applies">${(r.appliesTo || []).join(' / ')}</span><div class="fc-rule-desc">${escape(r.description || '')}</div></li>`
+      ).join('')}
+    </ul>
+  `
+
+  root.querySelectorAll('[data-juris]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.juris
+      mutateProject(p => {
+        if (!p.fireCode) p.fireCode = { jurisdictions: [] }
+        if (!Array.isArray(p.fireCode.jurisdictions)) p.fireCode.jurisdictions = []
+        const set = new Set(p.fireCode.jurisdictions)
+        if (cb.checked) set.add(id)
+        else            set.delete(id)
+        p.fireCode.jurisdictions = Array.from(set)
+      })
+    })
+  })
+  return root
+}
+
+function escape(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
 }
 
 // ── Tab: Updates ──────────────────────────────────────────────────────────

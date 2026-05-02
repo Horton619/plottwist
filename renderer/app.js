@@ -4,6 +4,8 @@ import { state, setState, subscribe, mutateProject, markClean, uid, activeRoom, 
 import { getSetting, onSettingsChange } from './settings.js'
 import { checkForUpdates } from './updater.js'
 import { initSettingsModal, openSettings } from './ui/settingsModal.js'
+import { initFireMarshalSheet, runAndShow as runFireMarshal } from './ui/fireMarshalSheet.js'
+import { initExportDialog, openExportDialog } from './ui/exportDialog.js'
 import { initCanvas, fitToContent, cancelCalibration } from './canvas.js'
 import { initToolbar, selectTool } from './ui/toolbar.js'
 import { initProjectSidebar }      from './ui/projectSidebar.js'
@@ -43,6 +45,8 @@ window.addEventListener('DOMContentLoaded', () => {
   bindImageImport()
   bindLeftPaneSplit()
   initSettingsModal()
+  initFireMarshalSheet()
+  initExportDialog()
   bindPickModeBanner()
   bindAutoSave()
   runLaunchUpdateCheck()
@@ -271,6 +275,8 @@ async function handleMenuEvent(ev) {
     if (ok && window.plottwist) window.plottwist.quitNow()
   }
   if (ev === 'menu-open-settings')     return openSettings()
+  if (ev === 'menu-fire-marshal')      return runFireMarshal()
+  if (ev === 'menu-export-layout')     return openExportDialog()
 }
 
 function newProject() {

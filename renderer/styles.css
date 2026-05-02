@@ -16,6 +16,8 @@
   --accent:        #FF2D9D;
   --accent-soft:   rgba(255, 45, 157, 0.18);
   --accent-glow:   rgba(255, 45, 157, 0.45);
+  --violation:     #FF3B30;        /* red — fire marshal callouts */
+  --violation-soft: rgba(255, 59, 48, 0.18);
 
   --titlebar-h:    44px;
   --footer-h:      28px;
@@ -1035,6 +1037,359 @@ input {
 .vep-footer .copyright { letter-spacing: 0.2px; }
 .vep-footer .vep-link  { color: var(--text-dim); letter-spacing: 0.2px; }
 .vep-footer .vep-link:hover { color: var(--accent); text-decoration: none; }
+
+/* ─── Export dialog ────────────────────────────────────────────────────── */
+
+.export-modal {
+  position: fixed; inset: 0;
+  display: none;
+  z-index: 1100;
+}
+.export-modal.open { display: block; }
+.export-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+.export-panel {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 480px; max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 80px);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.export-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.export-title { font-weight: 600; letter-spacing: 0.02em; }
+.export-close {
+  width: 26px; height: 26px;
+  font-size: 20px; color: var(--text-faint);
+  border-radius: 4px;
+}
+.export-close:hover { color: var(--text); background: var(--bg); }
+
+.export-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+.export-body h4 {
+  margin: 14px 0 6px;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.export-body h4:first-child { margin-top: 0; }
+
+.export-context {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 4px 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.export-ctx-key { color: var(--text-faint); }
+.export-ctx-val { color: var(--text); font-weight: 500; }
+
+.export-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 0;
+}
+.export-row.export-check {
+  grid-template-columns: 22px auto 1fr;
+  align-items: start;
+  cursor: pointer;
+}
+.export-row.export-check input[type="checkbox"] { margin-top: 2px; }
+.export-row.export-check .export-key { font-weight: 500; }
+.export-row .export-key { font-size: 12px; color: var(--text); }
+.export-row .export-hint { font-size: 11px; color: var(--text-faint); }
+.export-row .select-input,
+.export-row .num-input {
+  width: 100%;
+  text-align: right;
+}
+.export-custom-inputs {
+  display: flex; gap: 6px; align-items: center;
+  font-size: 12px; color: var(--text-faint);
+}
+.export-custom-inputs .num-input { width: 70px; }
+.export-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.export-segmented .seg-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  background: var(--bg-elevated);
+}
+.export-segmented .seg-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.export-segmented .seg-btn:hover { color: var(--text); }
+
+.export-summary {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 14px; padding: 8px 12px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.export-summary-label { color: var(--text-faint); }
+.export-summary-val   { color: var(--text); font-weight: 600; }
+
+.export-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.export-actions { display: flex; gap: 8px; }
+.block-btn.accent {
+  background: var(--accent);
+  color: #fff;
+}
+.block-btn.accent:hover { background: #ff4ba9; }
+.block-btn.accent:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.export-status {
+  padding: 6px 16px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  min-height: 22px;
+  border-top: 1px solid var(--border-soft);
+}
+.export-status.error { color: #ff7a6e; }
+
+/* ─── Fire Marshal sheet ───────────────────────────────────────────────── */
+
+.fire-marshal-sheet {
+  position: fixed;
+  top:   calc(var(--titlebar-h) + var(--toolbar-h) + 12px);
+  right: 16px;
+  bottom: calc(var(--footer-h) + 16px);
+  width: 380px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 800;
+}
+.fire-marshal-sheet.open { display: flex; }
+
+.fm-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+.fm-title {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; letter-spacing: 0.02em; font-size: 13px;
+}
+.fm-stripe {
+  display: inline-block;
+  width: 4px; height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.fm-close {
+  width: 24px; height: 24px;
+  font-size: 18px; color: var(--text-faint);
+  border-radius: 4px;
+}
+.fm-close:hover { color: var(--text); background: var(--bg); }
+
+.fm-jurisdictions {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.fm-jurisdictions.fm-empty {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-style: italic;
+}
+.fm-chip {
+  padding: 2px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.fm-summary {
+  display: flex; gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 11.5px;
+}
+.fm-count.fm-err  { color: var(--violation); font-weight: 600; }
+.fm-count.fm-warn { color: #ffb86b; }
+.fm-count.fm-info { color: var(--text-dim); }
+
+.fm-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.fm-row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+  transition: background 80ms;
+}
+.fm-row:hover { background: var(--bg-elevated); }
+.fm-row.focused {
+  background: var(--violation-soft);
+  border-left: 2px solid var(--violation);
+  padding-left: 12px;
+}
+.fm-num {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--violation);
+  color: #fff;
+  font-weight: 700; font-size: 12px;
+}
+.fm-num.fm-info {
+  background: var(--bg);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  font-style: italic;
+}
+.fm-msg-block { display: flex; flex-direction: column; gap: 2px; }
+.fm-rule-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.fm-msg {
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.35;
+}
+.fm-cite {
+  display: flex; gap: 6px; align-items: center;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.fm-cite-jurisdiction { color: var(--text-dim); }
+.fm-cite-code {
+  padding: 1px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, "Menlo", monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.fm-clean {
+  padding: 24px 14px;
+  text-align: center;
+}
+.fm-clean-glyph {
+  font-size: 32px;
+  color: #5be7d4;
+  margin-bottom: 8px;
+}
+.fm-clean-msg {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.fm-clean-disclaimer {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.fm-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+}
+
+/* Fire Code tab inside Settings */
+.fc-juris-list {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+.fc-juris-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.fc-juris-row:hover { border-color: var(--border); }
+.fc-juris-row input[type="checkbox"] { margin-top: 2px; }
+.fc-juris-name { font-size: 12.5px; color: var(--text); font-weight: 600; }
+.fc-juris-basis { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+.fc-rule-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.fc-rule-list li { margin: 6px 0; }
+.fc-rule-list b { color: var(--text); }
+.fc-rule-applies {
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.fc-rule-desc {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
 
 /* ─── Scrollbars ───────────────────────────────────────────────────────── */
 

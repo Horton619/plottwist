@@ -11,7 +11,7 @@ import { startSelectDrag,  updateSelectDrag,  endSelectDrag }  from './tools/sel
 import { startDimDraw,     updateDimDraw,     endDimDraw }     from './tools/dimTool.js'
 import { computeAislePositions, computeShiftedRoundAislePositions } from './solver/geom.js'
 import { getSetting, onSettingsChange } from './settings.js'
-import { computeMoveSnap }       from './snapEngine.js'
+import { computeMoveSnap, computeDragPointSnap } from './snapEngine.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -241,6 +241,24 @@ function onPointerDown(e) {
       svg.setPointerCapture(e.pointerId)
       return
     }
+    // Aisle dim-label drag — slides the dim line along the aisle's long axis.
+    const aisleDim = e.target.closest('[data-aisle-dim-id]')
+    if (aisleDim) {
+      const aisleId = aisleDim.dataset.aisleDimId
+      const layout  = activeLayout()
+      const aisle   = (layout?.objects || []).find(o => o.id === aisleId)
+                   || room.objects.find(o => o.id === aisleId)
+      if (aisle) {
+        beginTransaction()
+        drag = {
+          mode: 'aisle-dim',
+          aisleId,
+          axis: aisleDim.dataset.aisleAxis,    // 'x' (horizontal aisle) | 'y' (vertical)
+        }
+        svg.setPointerCapture(e.pointerId)
+        return
+      }
+    }
     // Hit-test against active layout first (visually on top), then venue.
     const layout = activeLayout()
     const layoutHit = layout && !layout.hidden && !layout.locked
@@ -327,22 +345,48 @@ function onPointerMove(e) {
   } else if (drag.mode === 'draw-dim') {
     const tol = getSetting('snapEnabled') ? pxToWorldDist(getSetting('snapTolerance')) : 0
     updateDimDraw([Math.round(w.x), Math.round(w.y)], e.shiftKey, tol)
+  } else if (drag.mode === 'aisle-dim') {
+    const layout = activeLayout()
+    const aisle  = (layout?.objects || []).find(o => o.id === drag.aisleId)
+                || activeRoom()?.objects.find(o => o.id === drag.aisleId)
+    if (!aisle) return
+    let frac
+    if (drag.axis === 'x') {
+      frac = (w.x - aisle.x) / aisle.w
+    } else {
+      frac = (w.y - aisle.y) / aisle.h
+    }
+    if (!isFinite(frac)) return
+    frac = Math.max(0.05, Math.min(0.95, frac))
+    mutateProject(() => { aisle.dimLabelFrac = Math.round(frac * 100) / 100 })
+    return
   } else if (drag.mode === 'move' || drag.mode === 'resize' || drag.mode === 'vertex') {
     drag.shiftHeld = e.shiftKey
 
-    // Anchor snapping — only on plain move drags, and only when shift isn't
-    // locking an axis. Tolerance + on/off come from Settings → Workspace.
+    // Anchor snapping. Move drags pull the WHOLE selection by a delta; vertex
+    // and resize drags snap the cursor itself, since the underlying math
+    // already uses cursor deltas. Tolerance + on/off come from Settings.
     let snappedWorld = w
-    if (drag.mode === 'move' && !drag.shiftHeld && getSetting('snapEnabled')) {
-      const dx = Math.round(w.x - drag.start.x)
-      const dy = Math.round(w.y - drag.start.y)
+    if (!drag.shiftHeld && getSetting('snapEnabled')) {
       const tol = pxToWorldDist(getSetting('snapTolerance'))
-      const snap = computeMoveSnap(drag, dx, dy, tol)
-      if (snap) {
-        state.snapIndicator = snap.indicator
-        snappedWorld = { x: w.x + snap.offsetX, y: w.y + snap.offsetY }
-      } else if (state.snapIndicator) {
-        state.snapIndicator = null
+      if (drag.mode === 'move') {
+        const dx = Math.round(w.x - drag.start.x)
+        const dy = Math.round(w.y - drag.start.y)
+        const snap = computeMoveSnap(drag, dx, dy, tol)
+        if (snap) {
+          state.snapIndicator = snap.indicator
+          snappedWorld = { x: w.x + snap.offsetX, y: w.y + snap.offsetY }
+        } else if (state.snapIndicator) {
+          state.snapIndicator = null
+        }
+      } else {
+        const snap = computeDragPointSnap(drag, w.x, w.y, tol)
+        if (snap) {
+          state.snapIndicator = { x: snap.x, y: snap.y, kind: snap.kind }
+          snappedWorld = { x: snap.x, y: snap.y }
+        } else if (state.snapIndicator) {
+          state.snapIndicator = null
+        }
       }
     } else if (state.snapIndicator) {
       state.snapIndicator = null
@@ -364,6 +408,8 @@ function onPointerUp(e) {
     endRectDraw()
   } else if (drag.mode === 'draw-dim') {
     endDimDraw()
+  } else if (drag.mode === 'aisle-dim') {
+    endTransaction()
   } else if (drag.mode === 'move' || drag.mode === 'resize' || drag.mode === 'vertex') {
     endSelectDrag(drag)
     endTransaction()    // close the undo group; a no-op gesture leaves no history entry
@@ -456,9 +502,66 @@ function render() {
   renderObjects()
   renderHandles()
   renderToolLayer()
+  renderFireMarshal()   // magenta callouts; only visible while the sheet is open
   renderStatus()
   renderCalibration()
   updateCursor()
+}
+
+// Numbered magenta callouts — anchored at each violation in
+// state.fireMarshal.result.violations. Drawn last so they layer above objects
+// and handles. Scaled to a constant pixel size via pxToWorldDist.
+let fireMarshalLayer = null
+function renderFireMarshal() {
+  if (!fireMarshalLayer) {
+    fireMarshalLayer = document.createElementNS(SVG_NS, 'g')
+    fireMarshalLayer.setAttribute('class', 'fire-marshal-layer')
+    svg.appendChild(fireMarshalLayer)
+  } else {
+    while (fireMarshalLayer.firstChild) fireMarshalLayer.removeChild(fireMarshalLayer.firstChild)
+    svg.appendChild(fireMarshalLayer)   // re-attach last so it stays on top
+  }
+  const fm = state.fireMarshal
+  if (!fm || !fm.open || !fm.result) return
+  const focusedId = fm.focusedId
+  const r = pxToWorldDist(13)
+  for (const v of fm.result.violations) {
+    if (!v.anchor || v.severity === 'info') continue
+    const isFocused = v.id === focusedId
+    const g = document.createElementNS(SVG_NS, 'g')
+    g.setAttribute('class', 'fm-callout')
+    // Outer halo on focused violations.
+    if (isFocused) {
+      const halo = document.createElementNS(SVG_NS, 'circle')
+      halo.setAttribute('cx', v.anchor.x); halo.setAttribute('cy', v.anchor.y)
+      halo.setAttribute('r', pxToWorldDist(22))
+      halo.setAttribute('fill', 'none')
+      halo.setAttribute('stroke', '#FF3B30')
+      halo.setAttribute('stroke-width', pxToWorldDist(2))
+      halo.setAttribute('vector-effect', 'non-scaling-stroke')
+      halo.setAttribute('opacity', 0.6)
+      g.appendChild(halo)
+    }
+    const circ = document.createElementNS(SVG_NS, 'circle')
+    circ.setAttribute('cx', v.anchor.x); circ.setAttribute('cy', v.anchor.y)
+    circ.setAttribute('r', r)
+    circ.setAttribute('fill', '#FF3B30')
+    circ.setAttribute('stroke', '#fff')
+    circ.setAttribute('stroke-width', pxToWorldDist(1.5))
+    circ.setAttribute('vector-effect', 'non-scaling-stroke')
+    g.appendChild(circ)
+    const t = document.createElementNS(SVG_NS, 'text')
+    t.setAttribute('x', v.anchor.x); t.setAttribute('y', v.anchor.y)
+    t.setAttribute('text-anchor', 'middle')
+    t.setAttribute('dominant-baseline', 'central')
+    t.setAttribute('fill', '#fff')
+    t.setAttribute('font-size', pxToWorldDist(13))
+    t.setAttribute('font-weight', '700')
+    t.setAttribute('font-family', 'system-ui, sans-serif')
+    t.textContent = String(v.id)
+    g.appendChild(t)
+    fireMarshalLayer.appendChild(g)
+  }
 }
 
 let guideLayer = null
@@ -640,7 +743,7 @@ function renderObject(o) {
     if (o.type === 'aisle') {
       const g = document.createElementNS(SVG_NS, 'g')
       g.appendChild(el)
-      g.appendChild(buildAisleDimCallout(o.x, o.y, o.w, o.h))
+      g.appendChild(buildAisleDimCallout(o.x, o.y, o.w, o.h, 0, { aisleId: o.id, frac: o.dimLabelFrac ?? 0.5 }))
       el = g
     }
   } else if (o.kind === 'polygon') {
@@ -859,6 +962,11 @@ function buildDimGraphic(d, preview) {
   return g
 }
 
+function clampFrac(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return 0.5
+  return Math.max(0.05, Math.min(0.95, v))
+}
+
 function formatDimLength(inches) {
   // Foot/inch like 12'-6". Match the conventions used in units.js.
   const totalIn = Math.round(inches)
@@ -879,25 +987,33 @@ function formatDimLength(inches) {
 // rendering in (world for user aisles, local-frame for auto-aisle stripes).
 // `counterRotateDeg` keeps the label upright when the parent group is rotated
 // (used by auto-aisles inside the seating zone group).
-function buildAisleDimCallout(worldX, worldY, w, h, counterRotateDeg = 0) {
+//
+// `interactive` (when supplied with an aisleId) tags the group so canvas
+// pointerdown can pick it up for the slide-along-long-axis drag, and reads
+// `frac` (0..1) for the position of the dim line along the aisle's long
+// axis. Auto-aisle stripes inside seating zones don't pass `interactive`.
+function buildAisleDimCallout(worldX, worldY, w, h, counterRotateDeg = 0, interactive = null) {
   const isWide = w > h
   const widthVal = Math.min(w, h)
   const label = formatDimLength(widthVal)
   const stroke = '#d4a72c'
   const sw = pxToWorldDist(0.8)
   const arrow = pxToWorldDist(6)   // arrowhead size (~6px on screen)
+  const frac = clampFrac(interactive?.frac ?? 0.5)
 
   const g = document.createElementNS(SVG_NS, 'g')
   g.setAttribute('class', 'aisle-dim')
-  g.setAttribute('pointer-events', 'none')
+  if (interactive?.aisleId) {
+    g.setAttribute('data-aisle-dim-id', interactive.aisleId)
+    g.setAttribute('data-aisle-axis', isWide ? 'x' : 'y')
+    g.style.cursor = isWide ? 'ew-resize' : 'ns-resize'
+  } else {
+    g.setAttribute('pointer-events', 'none')
+  }
 
-  // TODO: future — let the user click-and-drag the callout along the aisle's
-  // long axis to reposition it. Constrain inside the aisle bbox; persist the
-  // user's chosen offset on the aisle (or zone) object. For now we lock to
-  // the aisle's center.
   if (!isWide) {
-    // Vertical aisle: horizontal dim line CENTERED on the aisle's Y axis.
-    const dimY = worldY + h / 2
+    // Vertical aisle: horizontal dim line, position along Y-axis = frac.
+    const dimY = worldY + h * frac
     const x1 = worldX, x2 = worldX + w
 
     const line = document.createElementNS(SVG_NS, 'line')
@@ -917,8 +1033,8 @@ function buildAisleDimCallout(worldX, worldY, w, h, counterRotateDeg = 0) {
     const cy = dimY - arrow - pxToWorldDist(3)
     g.appendChild(dimText(cx, cy, label, widthVal, stroke, counterRotateDeg))
   } else {
-    // Horizontal aisle: vertical dim line CENTERED on the aisle's X axis.
-    const dimX = worldX + w / 2
+    // Horizontal aisle: vertical dim line, position along X-axis = frac.
+    const dimX = worldX + w * frac
     const y1 = worldY, y2 = worldY + h
 
     const line = document.createElementNS(SVG_NS, 'line')

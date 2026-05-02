@@ -3,7 +3,7 @@
 import { state, setState, subscribe, mutateProject, selectedObjects, TYPE_STYLES, styleFor, objectName, activeRoom, activeLayout, uid } from '../state.js'
 import { objectBounds, objectArea } from '../geom.js'
 import { formatInches, formatSqFt, parseInches } from '../units.js'
-import { unionShapes, mergedType } from '../shapeOps.js'
+import { unionShapes, subtractShapes, intersectShapes, mergedType } from '../shapeOps.js'
 import { startCalibration } from '../canvas.js'
 import { solveSeatingZone } from '../solver/index.js'
 import { STYLE_DEFAULTS, TABLE_PRESETS, ROUND_PRESETS, MIXED_TABLE_PRESETS } from '../tools/polygonTool.js'
@@ -55,12 +55,18 @@ export function initObjectInfo(host) {
           <div class="panel-section">
             <div class="panel-section-title">Boolean</div>
             <button class="block-btn" data-action="join">Join → Polygon</button>
-            <p class="panel-hint">Merges overlapping / touching shapes into a single editable polygon.</p>
+            <button class="block-btn" data-action="subtract">Subtract</button>
+            <button class="block-btn" data-action="intersect">Intersect</button>
+            <p class="panel-hint">Subtract: bottom layer minus the rest. Intersect: keep only the overlap.</p>
           </div>
         ` : ''}
       `
-      const joinBtn = panel.querySelector('[data-action="join"]')
-      if (joinBtn) joinBtn.addEventListener('click', () => joinSelectedShapes())
+      const joinBtn      = panel.querySelector('[data-action="join"]')
+      const subtractBtn  = panel.querySelector('[data-action="subtract"]')
+      const intersectBtn = panel.querySelector('[data-action="intersect"]')
+      if (joinBtn)      joinBtn.addEventListener('click',     () => applyBoolean('Join',      unionShapes))
+      if (subtractBtn)  subtractBtn.addEventListener('click', () => applyBoolean('Subtract',  subtractShapes))
+      if (intersectBtn) intersectBtn.addEventListener('click',() => applyBoolean('Intersect', intersectShapes))
       return
     }
 
@@ -612,30 +618,39 @@ function wireSeatingControls(panel, o) {
   })
 }
 
-// Replace the multi-selection with a single merged polygon.
-function joinSelectedShapes() {
+// Replace the multi-selection with a single derived polygon. The opFn is one
+// of unionShapes / subtractShapes / intersectShapes.
+//
+// For Subtract specifically, the FIRST array element (lowest z-order) is the
+// base surface, and the rest are cutters — this matches the panel hint "bottom
+// layer minus the rest." We sort by stack order before calling the op.
+function applyBoolean(opLabel, opFn) {
   const sel = selectedObjects()
   if (sel.length < 2) return
-  const result = unionShapes(sel)
-  if (result.error) {
-    alert(result.error)
-    return
-  }
-  const newType = mergedType(sel)
-  // Position in z-order: bottom-most of the source objects, so the merged
-  // polygon doesn't suddenly jump up the stack.
+
+  const room = activeRoom()
+  if (!room) return
+  // Sort by ROOM stack order — earlier index = bottom-most. selection[] order
+  // is click order, which isn't what we want for Subtract semantics.
+  const indexOf = (o) => room.objects.indexOf(o)
+  const ordered = [...sel].sort((a, b) => indexOf(a) - indexOf(b))
+
+  const result = opFn(ordered)
+  if (result.error) { alert(`${opLabel}: ${result.error}`); return }
+
+  const newType = mergedType(ordered)
   const newId = uid('obj')
-  const sourceIds = new Set(sel.map(s => s.id))
+  const sourceIds = new Set(ordered.map(s => s.id))
   mutateProject(p => {
-    const room = p.rooms.find(r => r.id === state.activeRoomId)
-    if (!room) return
-    let insertAt = room.objects.length
-    for (let i = 0; i < room.objects.length; i++) {
-      if (sourceIds.has(room.objects[i].id)) { insertAt = i; break }
+    const r = p.rooms.find(rm => rm.id === state.activeRoomId)
+    if (!r) return
+    let insertAt = r.objects.length
+    for (let i = 0; i < r.objects.length; i++) {
+      if (sourceIds.has(r.objects[i].id)) { insertAt = i; break }
     }
-    room.objects = room.objects.filter(o => !sourceIds.has(o.id))
-    const insertIdx = Math.min(insertAt, room.objects.length)
-    room.objects.splice(insertIdx, 0, {
+    r.objects = r.objects.filter(o => !sourceIds.has(o.id))
+    const insertIdx = Math.min(insertAt, r.objects.length)
+    r.objects.splice(insertIdx, 0, {
       id: newId,
       kind: 'polygon',
       type: newType,

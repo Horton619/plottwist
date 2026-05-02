@@ -16,9 +16,15 @@ contextBridge.exposeInMainWorld('plottwist', {
 
   // App menu events
   onMenuEvent: (cb) => {
-    const events = ['menu-new-project', 'menu-open-project', 'menu-save-project', 'menu-save-project-as', 'menu-save-and-quit', 'menu-insert-image', 'menu-open-settings']
+    const events = ['menu-new-project', 'menu-open-project', 'menu-save-project', 'menu-save-project-as', 'menu-save-and-quit', 'menu-insert-image', 'menu-open-settings', 'menu-fire-marshal', 'menu-export-layout']
     events.forEach(ev => ipcRenderer.on(ev, () => cb(ev)))
   },
+
+  // Bundled resources (data files shipped with the app).
+  readBundledResource: (relPath) => ipcRenderer.invoke('read-bundled-resource', relPath),
+
+  // Vector PDF export — main process renders the SVG via printToPDF.
+  exportPdf: (args) => ipcRenderer.invoke('export-pdf', args),
 
   // Dirty-state tracking for unsaved-changes prompt
   setDirty: (dirty) => ipcRenderer.invoke('set-dirty', dirty),

@@ -71,7 +71,9 @@ function createWindow() {
         { label: 'Save Project',      accelerator: 'CmdOrCtrl+S',       click: () => mainWindow.webContents.send('menu-save-project') },
         { label: 'Save Project As…',  accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('menu-save-project-as') },
         { type: 'separator' },
-        { label: 'Insert Image…',     accelerator: 'CmdOrCtrl+Shift+I', click: () => mainWindow.webContents.send('menu-insert-image') }
+        { label: 'Insert Image…',     accelerator: 'CmdOrCtrl+Shift+I', click: () => mainWindow.webContents.send('menu-insert-image') },
+        { type: 'separator' },
+        { label: 'Export Layout…',    accelerator: 'CmdOrCtrl+E',       click: () => mainWindow.webContents.send('menu-export-layout') }
       ]
     },
     {
@@ -94,6 +96,13 @@ function createWindow() {
         // TEMP — remove before ship. Quick "kill app + relaunch" for dev iteration.
         { label: 'Restart App', accelerator: 'CmdOrCtrl+Shift+R',
           click: () => { app.relaunch(); app.exit(0) } },
+      ]
+    },
+    {
+      label: 'Tools',
+      submenu: [
+        { label: 'Fire Marshal Check…', accelerator: 'CmdOrCtrl+Shift+F',
+          click: () => mainWindow.webContents.send('menu-fire-marshal') },
       ]
     }
   ]
@@ -197,4 +206,57 @@ ipcMain.handle('write-binary-file', (_e, filePath, base64) => {
 
 ipcMain.handle('show-item-in-folder', (_e, filePath) => {
   shell.showItemInFolder(filePath)
+})
+
+// Bundled-resource read — resolves a path relative to the app root so the
+// renderer can pull data files that ship with the app (e.g. data/fireCode.json)
+// without knowing the absolute install path.
+ipcMain.handle('read-bundled-resource', (_e, relPath) => {
+  const safe = String(relPath || '').replace(/^[/\\]+/, '')
+  const abs = path.join(app.getAppPath(), safe)
+  if (!abs.startsWith(app.getAppPath())) throw new Error('path outside app root')
+  return fs.readFileSync(abs, 'utf8')
+})
+
+// Vector PDF export — wraps the renderer-provided SVG in a print-friendly
+// HTML page sized to the paper, loads it into a hidden BrowserWindow, and
+// uses webContents.printToPDF() to produce a true-vector PDF.
+ipcMain.handle('export-pdf', async (_e, { svg, paperW, paperH, savePath }) => {
+  let win
+  try {
+    if (!svg || !paperW || !paperH || !savePath) throw new Error('missing args')
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  @page { size: ${paperW}in ${paperH}in; margin: 0; }
+  html, body { margin: 0; padding: 0; width: ${paperW}in; height: ${paperH}in; background: #fff; }
+  svg { display: block; width: 100%; height: 100%; }
+</style></head><body>${svg}</body></html>`
+
+    win = new BrowserWindow({
+      show: false,
+      width:  Math.max(400, Math.round(paperW * 96)),
+      height: Math.max(400, Math.round(paperH * 96)),
+      webPreferences: {
+        offscreen: false,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+    await win.loadURL('data:text/html;charset=utf-8;base64,' + Buffer.from(html, 'utf-8').toString('base64'))
+    // 1 inch = 25,400 microns. Pass page size in microns so Chromium honors
+    // the exact paper dimensions regardless of DPI.
+    const pdf = await win.webContents.printToPDF({
+      pageSize: { width: paperW * 25400, height: paperH * 25400 },
+      margins:  { marginType: 'none' },
+      printBackground:    true,
+      preferCSSPageSize:  true,
+    })
+    fs.writeFileSync(savePath, pdf)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  } finally {
+    if (win && !win.isDestroyed()) win.close()
+  }
 })

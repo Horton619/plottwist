@@ -42,6 +42,7 @@ export const state = {
   shapeClipboard: [],                              // copied non-image objects for ⌘C/⌘V
   snapIndicator:  null,                            // { x, y, kind } when a drag is currently snapping
   pickMode:       null,                            // 'origin' | 'centerline' | null — next canvas click sets that property
+  fireMarshal:    null,                            // { result, open, focusedId } — transient, set by Tools → Fire Marshal Check
   dirty:          false,
   filePath:       null,
   undoStack:      [],                              // each entry: deep-cloned project snapshot

@@ -157,6 +157,66 @@ function objectAtOffset(o, orig, dx, dy) {
   return o
 }
 
+// Compute the best single-point snap for a vertex or resize drag.
+//   - drag.mode is 'vertex' or 'resize'
+//   - qx, qy: the proposed cursor position in world coords
+//   - tolerance: world-units distance within which to snap
+//
+// For 'vertex': candidates exclude the dragged vertex itself but INCLUDE the
+// polygon's other vertices, so a vertex can snap to a sibling vertex.
+// For 'resize': the entire dragged rect is excluded.
+//
+// Returns { x, y, kind } of the snapped point, or null.
+export function computeDragPointSnap(drag, qx, qy, tolerance) {
+  const room   = activeRoom()
+  const layout = activeLayout()
+  const all = [...(room?.objects || []), ...(layout?.objects || [])]
+
+  const candidates = []
+  for (const o of all) {
+    if (o.hidden || o.locked) continue
+    if (drag.mode === 'vertex' && o.id === drag.objectId && o.kind === 'polygon') {
+      for (let i = 0; i < o.vertices.length; i++) {
+        if (i === drag.vertexIdx) continue
+        const [vx, vy] = o.vertices[i]
+        candidates.push({ x: vx, y: vy, kind: 'corner' })
+      }
+      continue
+    }
+    if (drag.mode === 'resize' && drag.snapshot?.has(o.id)) continue
+
+    candidates.push(...getSnapPoints(o))
+    if (o.type === 'seating' && o.result) {
+      for (const s of (o.result.seats  || [])) candidates.push({ x: s.x, y: s.y, kind: 'center' })
+      for (const t of (o.result.tables || [])) candidates.push({ x: t.x, y: t.y, kind: 'center' })
+    }
+  }
+
+  let best = null
+  let bestDist = tolerance
+  for (const a of candidates) {
+    const d = Math.hypot(a.x - qx, a.y - qy)
+    if (d < bestDist) { bestDist = d; best = { x: a.x, y: a.y, kind: a.kind } }
+  }
+
+  // Edge snap — skip dragged-object edges since they move with the gesture.
+  for (const o of all) {
+    if (o.hidden || o.locked) continue
+    if (drag.mode === 'vertex' && o.id === drag.objectId) continue
+    if (drag.mode === 'resize' && drag.snapshot?.has(o.id)) continue
+    for (const [a, b] of getObjectEdges(o)) {
+      const cp = closestPointOnSegment([qx, qy], a, b)
+      const d = Math.hypot(cp[0] - qx, cp[1] - qy)
+      if (d < bestDist) {
+        bestDist = d
+        best = { x: Math.round(cp[0]), y: Math.round(cp[1]), kind: 'edge' }
+      }
+    }
+  }
+
+  return best
+}
+
 // Compute the best snap during a move drag.
 //   - drag: the current drag state (has .snapshot of original geometry)
 //   - dx, dy: the proposed delta from drag.start (already shift-locked if applicable)

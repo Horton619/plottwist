@@ -74,3 +74,43 @@ export function mergedType(objects) {
   }
   return 'floor'
 }
+
+// Subtract: treats objects[0] (the bottom-most by stack order) as the base
+// surface. Every subsequent object is cut out of it. Same multipart / hole
+// guards as union.
+export function subtractShapes(objects) {
+  if (!window.polygonClipping) return { error: 'polygon-clipping library not loaded' }
+  const geoms = objects.map(toGeom).filter(Boolean)
+  if (geoms.length < 2) return { error: 'Need at least two shapes for Subtract.' }
+
+  let result
+  try {
+    result = window.polygonClipping.difference(geoms[0], ...geoms.slice(1))
+  } catch (err) {
+    return { error: err.message || 'Subtract failed.' }
+  }
+  const flat = flattenResult(result)
+  if (!flat)              return { error: 'Empty result — the cutters cover the entire base.' }
+  if (flat.error === 'multipart') return { error: 'Subtract leaves disjoint pieces; not supported in v1.' }
+  if (flat.hasHoles)      return { error: 'Subtract leaves an internal hole; not supported in v1.' }
+  return { vertices: flat.vertices }
+}
+
+// Intersect: keeps only the geometric overlap of all selected shapes.
+export function intersectShapes(objects) {
+  if (!window.polygonClipping) return { error: 'polygon-clipping library not loaded' }
+  const geoms = objects.map(toGeom).filter(Boolean)
+  if (geoms.length < 2) return { error: 'Need at least two shapes for Intersect.' }
+
+  let result
+  try {
+    result = window.polygonClipping.intersection(geoms[0], ...geoms.slice(1))
+  } catch (err) {
+    return { error: err.message || 'Intersect failed.' }
+  }
+  const flat = flattenResult(result)
+  if (!flat)              return { error: 'Selected shapes don\'t overlap — nothing to keep.' }
+  if (flat.error === 'multipart') return { error: 'Intersect produces disjoint pieces; not supported in v1.' }
+  if (flat.hasHoles)      return { error: 'Intersect result has internal holes; not supported in v1.' }
+  return { vertices: flat.vertices }
+}
