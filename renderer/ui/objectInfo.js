@@ -8,10 +8,7 @@ import { startCalibration } from '../canvas.js'
 import { solveSeatingZone } from '../solver/index.js'
 import { STYLE_DEFAULTS, TABLE_PRESETS, ROUND_PRESETS, MIXED_TABLE_PRESETS } from '../tools/polygonTool.js'
 import { getSetting } from '../settings.js'
-
-function escapeAttr(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}
+import { escapeAttr } from '../strings.js'
 
 // Coordinate display helpers — show X/Y relative to the project origin so
 // users can read positions from their chosen reference point. Internal
@@ -52,6 +49,12 @@ export function initObjectInfo(host) {
       const allRoomObjs   = sel.every(o => room.objects.includes(o))
       const joinable = allRoomObjs && sel.every(o => o.kind === 'rect' || o.kind === 'polygon')
       const mixedContainers = sel.every(o => o.kind === 'rect' || o.kind === 'polygon') && !allRoomObjs
+      // Base for Subtract = lowest stack-order shape (matches applyBoolean's
+      // sort). Showing the name removes the 50/50 guesswork from the user.
+      const baseShape = joinable
+        ? [...sel].sort((a, b) => room.objects.indexOf(a) - room.objects.indexOf(b))[0]
+        : null
+      const baseName = baseShape ? objectName(baseShape, room) : ''
       panel.innerHTML = `
         <div class="panel-section">
           <div class="panel-title">${sel.length} objects selected</div>
@@ -63,7 +66,7 @@ export function initObjectInfo(host) {
             <button class="block-btn" data-action="join">Join → Polygon</button>
             <button class="block-btn" data-action="subtract">Subtract</button>
             <button class="block-btn" data-action="intersect">Intersect</button>
-            <p class="panel-hint">Subtract: bottom layer minus the rest. Intersect: keep only the overlap.</p>
+            <p class="panel-hint"><b>Base:</b> ${escapeAttr(baseName)} (the bottom-most layer). Subtract removes the others from it; Intersect keeps the overlap.</p>
           </div>
         ` : mixedContainers ? `
           <div class="panel-section">

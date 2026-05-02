@@ -163,6 +163,13 @@ export function runFireMarshal(project, layoutId, activeIds, data) {
     for (const z of seatingZones) {
       if (!z.result?.seats?.length) continue
       if (!['theater', 'classroom', 'mixed'].includes(z.style)) continue
+      // Skip the rule when the zone has no aisles at all (single section,
+      // no internal aisle objects). The "max seats per row" rules govern
+      // egress past an aisle — without one, this rule doesn't apply.
+      const aisleCount = (z.aisles?.count != null) ? z.aisles.count
+                       : (z.centerAisle?.enabled === false ? 0 : 1)
+      const userAisleCount = (z.userAisles || []).length
+      if (aisleCount + userAisleCount === 0) continue
       const bySection      = new Map()
       const sectionsPerRow = new Map()
       for (const s of z.result.seats) {
@@ -177,6 +184,8 @@ export function runFireMarshal(project, layoutId, activeIds, data) {
         const row    = seats[0].row
         const secIdx = seats[0].sectionIdx ?? 0
         const total  = sectionsPerRow.get(row)?.size || 1
+        // Outer sections (first/last) only have an aisle at one end. Inner
+        // sections have aisles at both ends.
         const isOuter = secIdx === 0 || secIdx === total - 1
         const rule   = isOuter ? oneAisleR : twoAisleR
         if (!rule) continue

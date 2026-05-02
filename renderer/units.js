@@ -38,6 +38,19 @@ export function formatInches(inches) {
   return `${sign}${ft}'-${inch}"`
 }
 
+// Drafting-style dimension. Same as formatInches except whole feet always
+// render with a trailing `-0"` (e.g. `12'-0"` instead of `12'`) — convention
+// for dim lines so a whole-foot value reads unambiguously on a drawing.
+export function formatDimLength(inches) {
+  if (inches == null || isNaN(inches)) return ''
+  const sign = inches < 0 ? '-' : ''
+  const abs = Math.abs(Math.round(inches))
+  const ft = Math.floor(abs / 12)
+  const inch = abs - ft * 12
+  if (ft === 0) return `${sign}${inch}"`
+  return `${sign}${ft}'-${inch}"`
+}
+
 export function formatSqFt(sqInches) {
   if (sqInches == null || isNaN(sqInches)) return '–'
   return `${(sqInches / 144).toFixed(1)} ft²`

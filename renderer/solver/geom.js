@@ -158,19 +158,9 @@ export function distToSegment([px, py], [ax, ay], [bx, by]) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 }
 
-// Point-in-polygon test (ray casting). Used to drop seats whose center lands
-// inside a venue obstruction (pillar, etc.) — no section splitting, just
-// filter the offending seat out.
-export function pointInPolygon(px, py, verts) {
-  let inside = false
-  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
-    const [xi, yi] = verts[i], [xj, yj] = verts[j]
-    const intersect = ((yi > py) !== (yj > py)) &&
-      (px < (xj - xi) * (py - yi) / (yj - yi || 1e-9) + xi)
-    if (intersect) inside = !inside
-  }
-  return inside
-}
+// Point-in-polygon — delegated to renderer/geom.js so solver and renderer
+// can never disagree on edge-case behavior.
+export { pointInPolygon } from '../geom.js'
 
 // Convert an obstruction object (rect or polygon) to a world-space polygon.
 export function obstructionToWorldPolygon(o) {

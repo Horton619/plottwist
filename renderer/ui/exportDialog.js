@@ -10,7 +10,8 @@
 // output that any sheet-printer can scale.
 
 import { state, activeRoom, activeLayout } from '../state.js'
-import { buildExportSVG, PAPER_PRESETS } from '../exportLayout.js'
+import { buildExportSVG, PAPER_PRESETS, ENG_SCALES } from '../exportLayout.js'
+import { escapeHtml as escape } from '../strings.js'
 
 const STORE_KEY = 'plottwist:export'
 
@@ -24,19 +25,9 @@ const DEFAULTS = {
   includeFireMarshal: true,
 }
 
-const SCALE_CHOICES = [
-  { label: 'Auto',          value: 'auto' },
-  { label: '1/32" = 1\'',   value: 1 / 32 },
-  { label: '1/16" = 1\'',   value: 1 / 16 },
-  { label: '3/32" = 1\'',   value: 3 / 32 },
-  { label: '1/8" = 1\'',    value: 1 / 8 },
-  { label: '3/16" = 1\'',   value: 3 / 16 },
-  { label: '1/4" = 1\'',    value: 1 / 4 },
-  { label: '3/8" = 1\'',    value: 3 / 8 },
-  { label: '1/2" = 1\'',    value: 1 / 2 },
-  { label: '3/4" = 1\'',    value: 3 / 4 },
-  { label: '1" = 1\'',      value: 1 },
-]
+// Scale picker options — Auto + every entry from ENG_SCALES so the dialog
+// and the serializer can never disagree on which scales exist.
+const SCALE_CHOICES = [{ label: 'Auto', value: 'auto' }, ...ENG_SCALES]
 
 let modalEl = null
 let cfg = null
@@ -54,6 +45,9 @@ export function openExportDialog() {
   cfg = loadConfig()
   modalEl.classList.add('open')
   render()
+  // Land focus on the first interactive element so the keyboard works
+  // immediately without a click on the panel.
+  modalEl.querySelector('select, input, button')?.focus()
 }
 
 export function closeDialog() {
@@ -74,8 +68,19 @@ function ensureRoot() {
 function loadConfig() {
   try {
     const raw = localStorage.getItem(STORE_KEY)
-    if (!raw) return { ...DEFAULTS }
-    return { ...DEFAULTS, ...JSON.parse(raw) }
+    const merged = raw ? { ...DEFAULTS, ...JSON.parse(raw) } : { ...DEFAULTS }
+    // Validate restored values against current presets — e.g. a previously
+    // valid `cfg.scale` could be removed from SCALE_CHOICES later. Reset
+    // to the default rather than leaving an unselectable stale value.
+    if (merged.scale !== 'auto' && !SCALE_CHOICES.some(s => s.value === merged.scale)) {
+      merged.scale = DEFAULTS.scale
+    }
+    if (merged.preset !== 'custom' && !PAPER_PRESETS[merged.preset]) {
+      merged.preset = DEFAULTS.preset
+    }
+    if (![72, 150, 300, 600].includes(merged.dpi)) merged.dpi = DEFAULTS.dpi
+    if (!['portrait', 'landscape'].includes(merged.orientation)) merged.orientation = DEFAULTS.orientation
+    return merged
   } catch { return { ...DEFAULTS } }
 }
 function saveConfig() {
@@ -101,7 +106,9 @@ function render() {
   const panel = modalEl.querySelector('.export-panel')
   const room = activeRoom(); const layout = activeLayout()
   const paper = effectivePaper()
-  const fmAvailable = !!(state.fireMarshal?.result?.violations?.length)
+  // Gate on result existence, not violations.length — a clean check is still
+  // a result and the user might want a "no issues found" stamp on the export.
+  const fmAvailable = !!state.fireMarshal?.result
 
   panel.innerHTML = `
     <div class="export-header">
@@ -295,6 +302,3 @@ function sanitize(s) {
   return String(s).replace(/[^a-zA-Z0-9-_]+/g, '_').replace(/^_+|_+$/g, '') || 'layout'
 }
 
-function escape(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
-}

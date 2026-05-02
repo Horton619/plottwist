@@ -9,6 +9,7 @@ import { getSetting, setSetting, resetAllSettings, SETTINGS_DEFAULTS, onSettings
 import { formatInches, parseInches } from '../units.js'
 import { checkForUpdates, compareVersions } from '../updater.js'
 import { loadFireCodeData, getProjectJurisdictions } from '../fireMarshal.js'
+import { escapeHtml as escape } from '../strings.js'
 
 let modalEl = null
 let activeTab = 'workspace'
@@ -30,6 +31,8 @@ export function openSettings(tab = activeTab) {
   activeTab = tab
   modalEl.classList.add('open')
   render()
+  // Focus the active tab button so keyboard users land somewhere sensible.
+  modalEl.querySelector('.settings-tab.active')?.focus()
 }
 
 export function closeSettings() {
@@ -314,10 +317,6 @@ function renderFireCodeTab() {
   return root
 }
 
-function escape(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
-}
-
 // ── Tab: Updates ──────────────────────────────────────────────────────────
 
 function renderUpdatesTab() {
@@ -342,11 +341,12 @@ function renderUpdatesTab() {
     status.textContent = 'Checking…'
     const res = await checkForUpdates(currentVersion)
     if (!res.ok) {
-      status.innerHTML = `<span class="warn">Couldn't reach GitHub: ${res.error}</span>`
+      status.innerHTML = `<span class="warn">Couldn't reach GitHub: ${escape(res.error)}</span>`
       return
     }
     if (res.isNewer) {
-      status.innerHTML = `<span class="accent">Update available: ${res.latest}</span>
+      // Escape every field that comes from the GitHub API response.
+      status.innerHTML = `<span class="accent">Update available: ${escape(res.latest)}</span>
         <button class="block-btn small" data-action="open-release">View release</button>`
       status.querySelector('[data-action="open-release"]').addEventListener('click', () => {
         if (window.plottwist?.openExternal) window.plottwist.openExternal(res.url)

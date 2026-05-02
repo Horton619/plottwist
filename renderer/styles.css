@@ -1338,6 +1338,30 @@ input {
   line-height: 1.4;
 }
 
+/* No-jurisdictions empty state — distinct from the green-check clean state */
+.fm-empty-state {
+  padding: 28px 18px;
+  text-align: center;
+}
+.fm-empty-glyph {
+  font-size: 28px;
+  color: #ffb86b;
+  margin-bottom: 8px;
+}
+.fm-empty-title {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.fm-empty-msg {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+.fm-empty-state .block-btn { font-size: 12px; }
+
 .fm-footer {
   display: flex; justify-content: space-between; align-items: center;
   padding: 10px 14px;

@@ -15,6 +15,9 @@
 // ticks, north arrow, custom title-block templates) is for V2.
 
 import { state, activeRoom, activeLayout, styleFor } from './state.js'
+import { escapeAttr, escapeText } from './strings.js'
+import { formatDimLength } from './units.js'
+import { BRAND, ANNOT } from './colors.js'
 
 // ── Public API ────────────────────────────────────────────────────────────
 
@@ -27,8 +30,9 @@ export const PAPER_PRESETS = {
 }
 
 // Standard architectural scales — paper-inches per world-foot.
-// e.g. ENG_SCALES['1/8'] = 1/8 means 1/8" on paper = 1' in world.
-const ENG_SCALES = [
+// e.g. ENG_SCALES['1/8'] = 1/8 means 1/8" on paper = 1' in world. Exported
+// so the export dialog's scale picker stays in lockstep.
+export const ENG_SCALES = [
   { label: '1/32" = 1\'', value: 1 / 32 },
   { label: '1/16" = 1\'', value: 1 / 16 },
   { label: '3/32" = 1\'', value: 3 / 32 },
@@ -142,6 +146,12 @@ function pickStandardScale(worldW, worldH, paperW, paperH) {
   const maxScalePerInch        = Math.min(requiredScalePerInch_W, requiredScalePerInch_H)
   // Convert to per-foot.
   const maxScalePerFoot = maxScalePerInch * 12
+  // If the layout is too large for even the smallest standard scale, fall
+  // back to a custom fit-to-content scale so the drawing doesn't silently
+  // overflow the sheet. The label tags it so the title block reads honestly.
+  if (maxScalePerFoot < ENG_SCALES[0].value) {
+    return { value: maxScalePerFoot, label: `≈ Fit (${(1 / maxScalePerFoot).toFixed(0)}'/in)` }
+  }
   let chosen = ENG_SCALES[0]
   for (const s of ENG_SCALES) {
     if (s.value <= maxScalePerFoot) chosen = s
@@ -230,21 +240,21 @@ function serializeTable(table) {
   const transform = `translate(${table.x} ${table.y}) rotate(${table.rotation || 0})`
   if (isRound) {
     if (table.chairD) {
-      out.push(`<g transform="${transform}"><circle cx="0" cy="0" r="${w / 2 + table.chairD}" fill="none" stroke="#FF2D9D" stroke-opacity="0.28" stroke-width="${SW.hair}" stroke-dasharray="3 3"/></g>`)
+      out.push(`<g transform="${transform}"><circle cx="0" cy="0" r="${w / 2 + table.chairD}" fill="none" stroke="${BRAND.chair}" stroke-opacity="0.28" stroke-width="${SW.hair}" stroke-dasharray="3 3"/></g>`)
     }
     out.push(`<g transform="${transform}">
-      <circle cx="0" cy="0" r="${w / 2}" fill="#1a1f2e" stroke="#FF2D9D" stroke-width="${SW.med}"/>
+      <circle cx="0" cy="0" r="${w / 2}" fill="${BRAND.tableFill}" stroke="${BRAND.chair}" stroke-width="${SW.med}"/>
     </g>`)
   } else {
     out.push(`<g transform="${transform}">
-      <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="2" fill="#1a1f2e" stroke="#FF2D9D" stroke-width="${SW.med}"/>
+      <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="2" fill="${BRAND.tableFill}" stroke="${BRAND.chair}" stroke-width="${SW.med}"/>
     </g>`)
   }
   // Centered size label, in feet.
   const ft = w / 12
   const ftLabel = (Math.abs(ft - Math.round(ft)) < 0.05) ? `${Math.round(ft)}'` : `${ft.toFixed(1)}'`
   const fontSize = isRound ? Math.min(w * 0.18, 12) : Math.min(d * 0.55, 9)
-  out.push(`<g transform="${transform}"><text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="#FF2D9D" opacity="0.55">${escapeText(ftLabel)}</text></g>`)
+  out.push(`<g transform="${transform}"><text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="${BRAND.chair}" opacity="0.55">${escapeText(ftLabel)}</text></g>`)
   return out.join('')
 }
 
@@ -252,8 +262,8 @@ function serializeChair(seat) {
   const w = seat.w, d = seat.d
   const transform = `translate(${seat.x} ${seat.y}) rotate(${seat.rotation || 0})`
   return `<g transform="${transform}">
-    <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="1.5" fill="#FF2D9D" fill-opacity="0.32" stroke="#FF2D9D" stroke-width="${SW.hair}"/>
-    <line x1="${-w / 2}" y1="${d / 2}" x2="${w / 2}" y2="${d / 2}" stroke="#FF2D9D" stroke-width="${SW.heavy}" stroke-linecap="round"/>
+    <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="1.5" fill="${BRAND.chair}" fill-opacity="0.32" stroke="${BRAND.chair}" stroke-width="${SW.hair}"/>
+    <line x1="${-w / 2}" y1="${d / 2}" x2="${w / 2}" y2="${d / 2}" stroke="${BRAND.chair}" stroke-width="${SW.heavy}" stroke-linecap="round"/>
   </g>`
 }
 
@@ -263,7 +273,7 @@ function serializeDim(d) {
   if (len < 1) return ''
   const nx = -dy / len, ny = dx / len
   const tick = 8
-  const stroke = '#0fa999'
+  const stroke = ANNOT.dim.paper
   const out = []
   out.push(`<line x1="${d.x1}" y1="${d.y1}" x2="${d.x2}" y2="${d.y2}" stroke="${stroke}" stroke-width="${SW.thin}" stroke-dasharray="5 3" opacity="0.9"/>`)
   for (const [x, y] of [[d.x1, d.y1], [d.x2, d.y2]]) {
@@ -283,7 +293,7 @@ function serializeAisleDimCallout(x, y, w, h) {
   const isWide = w > h
   const widthVal = Math.min(w, h)
   const label = formatDimLength(widthVal)
-  const stroke = '#a87a00'
+  const stroke = ANNOT.aisle.paper
   const arrow = 6
   const out = []
   if (!isWide) {
@@ -326,7 +336,7 @@ function serializeFireMarshalCallouts(result, drawX, drawY, scale, wb) {
     const py = drawY + (v.anchor.y - wb.y) * scale
     const r = 0.13     // paper inches — ~9pt circle
     out.push(`<g class="fm-callout">
-      <circle cx="${px}" cy="${py}" r="${r}" fill="#FF3B30" stroke="#fff" stroke-width="0.015"/>
+      <circle cx="${px}" cy="${py}" r="${r}" fill="${BRAND.violation}" stroke="#fff" stroke-width="0.015"/>
       <text x="${px}" y="${py}" text-anchor="middle" dominant-baseline="central" font-size="${r * 1.5}" font-weight="700" fill="#fff">${v.id}</text>
     </g>`)
   }
@@ -404,22 +414,4 @@ function summarizeSeats(layout) {
     if (counts[o.style] != null) counts[o.style] += n
   }
   return counts
-}
-
-// ── String helpers ────────────────────────────────────────────────────────
-
-function escapeAttr(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;' }[c]))
-}
-function escapeText(s) {
-  return String(s ?? '').replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]))
-}
-
-function formatDimLength(inches) {
-  const totalIn = Math.round(inches)
-  const ft = Math.floor(totalIn / 12)
-  const inRem = totalIn - ft * 12
-  if (ft === 0) return `${inRem}"`
-  if (inRem === 0) return `${ft}'-0"`
-  return `${ft}'-${inRem}"`
 }

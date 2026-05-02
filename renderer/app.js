@@ -6,6 +6,7 @@ import { checkForUpdates } from './updater.js'
 import { initSettingsModal, openSettings } from './ui/settingsModal.js'
 import { initFireMarshalSheet, runAndShow as runFireMarshal } from './ui/fireMarshalSheet.js'
 import { initExportDialog, openExportDialog } from './ui/exportDialog.js'
+import { escapeHtml } from './strings.js'
 import { initCanvas, fitToContent, cancelCalibration } from './canvas.js'
 import { initToolbar, selectTool } from './ui/toolbar.js'
 import { initProjectSidebar }      from './ui/projectSidebar.js'
@@ -86,8 +87,10 @@ async function runLaunchUpdateCheck() {
 function showUpdateBanner(res) {
   const banner = document.createElement('div')
   banner.className = 'update-banner'
+  // GitHub fields are escaped — a poisoned tag/release name (or a future MITM
+  // on the API response) would otherwise inject markup straight into innerHTML.
   banner.innerHTML = `
-    <span>PlotTwist <b>${res.latest}</b> is available — you're on v${res.current}.</span>
+    <span>PlotTwist <b>${escapeHtml(res.latest)}</b> is available — you're on v${escapeHtml(res.current)}.</span>
     <button class="block-btn small" data-action="open">View release</button>
     <button class="ghost-btn small" data-action="dismiss">Dismiss</button>
   `
@@ -314,6 +317,20 @@ async function openProject() {
       if (!room.layouts || !room.layouts.length) {
         const layoutId = uid('layout')
         room.layouts = [{ id: layoutId, name: 'Layout 1', hidden: false, locked: false, objects: [] }]
+      }
+    }
+    // Project files round-trip embedded underlay images as data: URLs. A
+    // hostile .ptwist could swap that for `data:text/html` or a JS URL; if
+    // anything in the renderer ever passes the src to a navigator (window.open,
+    // <a href>, etc.), that runs as code. Reject anything that isn't a known
+    // image data URL on load.
+    const SAFE_DATA_IMG = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/i
+    for (const room of data.rooms) {
+      const allObjs = [...(room.objects || []), ...(room.layouts || []).flatMap(l => l.objects || [])]
+      for (const o of allObjs) {
+        if (o?.kind === 'image' && o.src && !SAFE_DATA_IMG.test(o.src)) {
+          throw new Error('Project file contains an underlay with an unsupported source.')
+        }
       }
     }
     state.project = {

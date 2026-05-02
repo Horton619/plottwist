@@ -4,6 +4,7 @@
 import { state, setState, subscribe, mutateProject, activeRoom, activeLayout, objectName, reorderObject, TYPE_STYLES } from '../state.js'
 import { duplicateObjectById, deleteObjectById } from '../app.js'
 import { ICON } from './icons.js'
+import { escapeHtml } from '../strings.js'
 
 export function initObjectList(host) {
   host.innerHTML = `
@@ -207,6 +208,3 @@ function dismissContextMenu() {
   if (openMenuEl) { openMenuEl.remove(); openMenuEl = null }
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}

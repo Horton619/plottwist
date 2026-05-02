@@ -4,7 +4,7 @@
 
 import { state, setState, subscribe, mutateProject, activeRoom, activeLayout, selectedObjects, styleFor, uid, beginTransaction, endTransaction } from './state.js'
 import { objectBounds, unionBounds, hitTest, distToSegment, snapToAxis } from './geom.js'
-import { formatInches, parseInches } from './units.js'
+import { formatInches, parseInches, formatDimLength } from './units.js'
 import { startRectDraw,    updateRectDraw,    endRectDraw }    from './tools/rectTool.js'
 import { startPolygonDraw, addPolygonVertex,  cancelPolygonDraw, finishPolygonDraw } from './tools/polygonTool.js'
 import { startSelectDrag,  updateSelectDrag,  endSelectDrag }  from './tools/selectTool.js'
@@ -12,6 +12,7 @@ import { startDimDraw,     updateDimDraw,     endDimDraw }     from './tools/dim
 import { computeAislePositions, computeShiftedRoundAislePositions } from './solver/geom.js'
 import { getSetting, onSettingsChange } from './settings.js'
 import { computeMoveSnap, computeDragPointSnap } from './snapEngine.js'
+import { BRAND, ANNOT } from './colors.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -185,7 +186,7 @@ function onPointerDown(e) {
   }
   if (state.pickMode === 'centerline') {
     mutateProject(p => {
-      if (!p.centerline) p.centerline = { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 }
+      if (!p.centerline) p.centerline = { enabled: true, x: 0, color: BRAND.centerline, thickness: 1.5 }
       p.centerline.enabled = true
       p.centerline.x = Math.round(w.x)
     })
@@ -536,7 +537,7 @@ function renderFireMarshal() {
       halo.setAttribute('cx', v.anchor.x); halo.setAttribute('cy', v.anchor.y)
       halo.setAttribute('r', pxToWorldDist(22))
       halo.setAttribute('fill', 'none')
-      halo.setAttribute('stroke', '#FF3B30')
+      halo.setAttribute('stroke', BRAND.violation)
       halo.setAttribute('stroke-width', pxToWorldDist(2))
       halo.setAttribute('vector-effect', 'non-scaling-stroke')
       halo.setAttribute('opacity', 0.6)
@@ -545,7 +546,7 @@ function renderFireMarshal() {
     const circ = document.createElementNS(SVG_NS, 'circle')
     circ.setAttribute('cx', v.anchor.x); circ.setAttribute('cy', v.anchor.y)
     circ.setAttribute('r', r)
-    circ.setAttribute('fill', '#FF3B30')
+    circ.setAttribute('fill', BRAND.violation)
     circ.setAttribute('stroke', '#fff')
     circ.setAttribute('stroke-width', pxToWorldDist(1.5))
     circ.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -583,7 +584,7 @@ function renderGuides() {
     const line = document.createElementNS(SVG_NS, 'line')
     line.setAttribute('x1', cl.x); line.setAttribute('y1', yTop)
     line.setAttribute('x2', cl.x); line.setAttribute('y2', yBot)
-    line.setAttribute('stroke', cl.color || '#5be7d4')
+    line.setAttribute('stroke', cl.color || BRAND.centerline)
     line.setAttribute('stroke-width', pxToWorldDist(cl.thickness ?? 1.5))
     line.setAttribute('stroke-dasharray', `${pxToWorldDist(8)} ${pxToWorldDist(4)}`)
     line.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -817,7 +818,7 @@ function buildTable(table) {
       outer.setAttribute('cx', 0); outer.setAttribute('cy', 0)
       outer.setAttribute('r', w / 2 + table.chairD)
       outer.setAttribute('fill', 'none')
-      outer.setAttribute('stroke', '#FF2D9D')
+      outer.setAttribute('stroke', BRAND.chair)
       outer.setAttribute('stroke-width', pxToWorldDist(0.4))
       outer.setAttribute('stroke-opacity', 0.28)
       outer.setAttribute('stroke-dasharray', `${pxToWorldDist(3)} ${pxToWorldDist(3)}`)
@@ -827,8 +828,8 @@ function buildTable(table) {
     const c = document.createElementNS(SVG_NS, 'circle')
     c.setAttribute('cx', 0); c.setAttribute('cy', 0)
     c.setAttribute('r', w / 2)
-    c.setAttribute('fill', '#1a1f2e')
-    c.setAttribute('stroke', '#FF2D9D')
+    c.setAttribute('fill', BRAND.tableFill)
+    c.setAttribute('stroke', BRAND.chair)
     c.setAttribute('stroke-width', pxToWorldDist(0.6))
     c.setAttribute('vector-effect', 'non-scaling-stroke')
     g.appendChild(c)
@@ -837,8 +838,8 @@ function buildTable(table) {
     r.setAttribute('x', -w / 2); r.setAttribute('y', -d / 2)
     r.setAttribute('width', w);  r.setAttribute('height', d)
     r.setAttribute('rx', 2)
-    r.setAttribute('fill', '#1a1f2e')
-    r.setAttribute('stroke', '#FF2D9D')
+    r.setAttribute('fill', BRAND.tableFill)
+    r.setAttribute('stroke', BRAND.chair)
     r.setAttribute('stroke-width', pxToWorldDist(0.6))
     r.setAttribute('vector-effect', 'non-scaling-stroke')
     g.appendChild(r)
@@ -856,7 +857,7 @@ function buildTable(table) {
   label.setAttribute('dominant-baseline', 'central')
   label.setAttribute('font-size', fontSize)
   label.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, monospace')
-  label.setAttribute('fill', '#FF2D9D')
+  label.setAttribute('fill', BRAND.chair)
   label.setAttribute('opacity', '0.55')
   label.textContent = ftLabel
   g.appendChild(label)
@@ -880,9 +881,9 @@ function buildChair(seat) {
   r.setAttribute('x', -w / 2); r.setAttribute('y', -d / 2)
   r.setAttribute('width', w);  r.setAttribute('height', d)
   r.setAttribute('rx', 1.5)
-  r.setAttribute('fill', '#FF2D9D')
+  r.setAttribute('fill', BRAND.chair)
   r.setAttribute('fill-opacity', 0.32)
-  r.setAttribute('stroke', '#FF2D9D')
+  r.setAttribute('stroke', BRAND.chair)
   r.setAttribute('stroke-width', pxToWorldDist(0.5))
   r.setAttribute('vector-effect', 'non-scaling-stroke')
   g.appendChild(r)
@@ -891,7 +892,7 @@ function buildChair(seat) {
   const back = document.createElementNS(SVG_NS, 'line')
   back.setAttribute('x1', -w / 2); back.setAttribute('y1', d / 2)
   back.setAttribute('x2',  w / 2); back.setAttribute('y2', d / 2)
-  back.setAttribute('stroke', '#FF2D9D')
+  back.setAttribute('stroke', BRAND.chair)
   back.setAttribute('stroke-width', pxToWorldDist(2))
   back.setAttribute('stroke-linecap', 'round')
   back.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -908,7 +909,7 @@ function buildChair(seat) {
 function buildDimGraphic(d, preview) {
   const g = document.createElementNS(SVG_NS, 'g')
   g.setAttribute('class', 'plot-dim' + (preview ? ' plot-dim-preview' : ''))
-  const stroke = '#5be7d4'
+  const stroke = ANNOT.dim.canvas
   const dx = d.x2 - d.x1, dy = d.y2 - d.y1
   const len = Math.hypot(dx, dy)
   if (len < 1) return g
@@ -967,15 +968,6 @@ function clampFrac(v) {
   return Math.max(0.05, Math.min(0.95, v))
 }
 
-function formatDimLength(inches) {
-  // Foot/inch like 12'-6". Match the conventions used in units.js.
-  const totalIn = Math.round(inches)
-  const ft = Math.floor(totalIn / 12)
-  const inRem = totalIn - ft * 12
-  if (ft === 0) return `${inRem}"`
-  if (inRem === 0) return `${ft}'-0"`
-  return `${ft}'-${inRem}"`
-}
 
 // Dimension callout for an aisle. Always reads horizontally:
 //   • Vertical aisle (taller than wide) → horizontal arrows pointing inward
@@ -996,7 +988,7 @@ function buildAisleDimCallout(worldX, worldY, w, h, counterRotateDeg = 0, intera
   const isWide = w > h
   const widthVal = Math.min(w, h)
   const label = formatDimLength(widthVal)
-  const stroke = '#d4a72c'
+  const stroke = ANNOT.aisle.canvas
   const sw = pxToWorldDist(0.8)
   const arrow = pxToWorldDist(6)   // arrowhead size (~6px on screen)
   const frac = clampFrac(interactive?.frac ?? 0.5)
@@ -1144,9 +1136,9 @@ function buildAutoAisles(zone) {
     const stripe = document.createElementNS(SVG_NS, 'rect')
     stripe.setAttribute('x', aMin); stripe.setAttribute('y', minY)
     stripe.setAttribute('width', aisleW); stripe.setAttribute('height', maxY - minY)
-    stripe.setAttribute('fill', '#d4a72c')
+    stripe.setAttribute('fill', ANNOT.aisle.canvas)
     stripe.setAttribute('fill-opacity', 0.10)
-    stripe.setAttribute('stroke', '#d4a72c')
+    stripe.setAttribute('stroke', ANNOT.aisle.canvas)
     stripe.setAttribute('stroke-width', pxToWorldDist(1))
     stripe.setAttribute('stroke-dasharray', `${pxToWorldDist(4)} ${pxToWorldDist(3)}`)
     stripe.setAttribute('stroke-opacity', 0.55)
@@ -1192,7 +1184,7 @@ function buildFacingArrow(zone) {
     `M 0 ${ay + len / 2} L 0 ${ay - len / 2} ` +
     `M ${-head / 2} ${ay - len / 2 + head} L 0 ${ay - len / 2} L ${head / 2} ${ay - len / 2 + head}`
   )
-  path.setAttribute('stroke', '#FF2D9D')
+  path.setAttribute('stroke', BRAND.chair)
   path.setAttribute('stroke-width', pxToWorldDist(1.5))
   path.setAttribute('fill', 'none')
   path.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -1334,7 +1326,7 @@ function renderToolLayer() {
     ring.setAttribute('cx', snap.x); ring.setAttribute('cy', snap.y)
     ring.setAttribute('r', r)
     ring.setAttribute('fill', 'none')
-    ring.setAttribute('stroke', '#5be7d4')
+    ring.setAttribute('stroke', ANNOT.dim.canvas)
     ring.setAttribute('stroke-width', pxToWorldDist(1.5))
     ring.setAttribute('vector-effect', 'non-scaling-stroke')
     toolLayer.appendChild(ring)
@@ -1344,7 +1336,7 @@ function renderToolLayer() {
       `M ${snap.x - tick} ${snap.y} L ${snap.x + tick} ${snap.y} ` +
       `M ${snap.x} ${snap.y - tick} L ${snap.x} ${snap.y + tick}`
     )
-    cross.setAttribute('stroke', '#5be7d4')
+    cross.setAttribute('stroke', ANNOT.dim.canvas)
     cross.setAttribute('stroke-width', pxToWorldDist(1))
     cross.setAttribute('vector-effect', 'non-scaling-stroke')
     toolLayer.appendChild(cross)

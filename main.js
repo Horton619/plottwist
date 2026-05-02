@@ -225,8 +225,15 @@ ipcMain.handle('export-pdf', async (_e, { svg, paperW, paperH, savePath }) => {
   let win
   try {
     if (!svg || !paperW || !paperH || !savePath) throw new Error('missing args')
+    // Defense-in-depth: even though exportLayout escapes user-controlled
+    // strings before they reach the SVG, the print window enforces a strict
+    // CSP that blocks scripts and external loads. Only inline images
+    // (data URLs) and the inline @page style are permitted.
     const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
+<html><head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:;">
+<style>
   @page { size: ${paperW}in ${paperH}in; margin: 0; }
   html, body { margin: 0; padding: 0; width: ${paperW}in; height: ${paperH}in; background: #fff; }
   svg { display: block; width: 100%; height: 100%; }
@@ -244,6 +251,19 @@ ipcMain.handle('export-pdf', async (_e, { svg, paperW, paperH, savePath }) => {
       },
     })
     await win.loadURL('data:text/html;charset=utf-8;base64,' + Buffer.from(html, 'utf-8').toString('base64'))
+    // SVG <image href="data:..."> tags inside the PDF page may not have
+    // finished decoding by the time did-finish-load resolves. Wait for every
+    // image to decode (or fail) before printing — otherwise PDFs can land
+    // missing the underlay raster entirely.
+    await win.webContents.executeJavaScript(`
+      Promise.all(
+        Array.from(document.querySelectorAll('image, img'))
+          .map(el => {
+            if (typeof el.decode === 'function') return el.decode().catch(() => null)
+            return new Promise(res => { if (el.complete) res(); else { el.onload = res; el.onerror = res } })
+          })
+      ).then(() => true)
+    `, true)
     // 1 inch = 25,400 microns. Pass page size in microns so Chromium honors
     // the exact paper dimensions regardless of DPI.
     const pdf = await win.webContents.printToPDF({

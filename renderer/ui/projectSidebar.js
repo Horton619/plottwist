@@ -2,6 +2,7 @@
 
 import { state, setState, subscribe, mutateProject, uid } from '../state.js'
 import { fitToContent } from '../canvas.js'
+import { escapeHtml } from '../strings.js'
 
 export function initProjectSidebar(host) {
   host.innerHTML = `
@@ -194,6 +195,3 @@ function lockOpenSvg() {
   return `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5 7V5a3 3 0 0 1 6 0" /></svg>`
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}

@@ -6,6 +6,7 @@
 import { state, setState, subscribe } from '../state.js'
 import { loadFireCodeData, runFireMarshal, getProjectJurisdictions } from '../fireMarshal.js'
 import { openSettings } from './settingsModal.js'
+import { escapeHtml as escape } from '../strings.js'
 
 let sheetEl  = null
 let dataRef  = null   // cached fire-code JSON
@@ -14,6 +15,10 @@ export async function initFireMarshalSheet() {
   ensureRoot()
   // Re-render whenever fire-marshal state or selection changes.
   subscribe(() => { if (isOpen()) render() })
+  // Esc closes the sheet — matches the Settings + Export modals.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isOpen() && !state.pickMode) closeSheet()
+  })
 }
 
 export async function runAndShow() {
@@ -28,6 +33,8 @@ export async function runAndShow() {
   const active = getProjectJurisdictions(state.project)
   const result = runFireMarshal(state.project, state.activeLayoutId, active, dataRef)
   setState({ fireMarshal: { ...(state.fireMarshal || {}), result, open: true, focusedId: null } })
+  // Land focus on the first violation row (or the Re-run button if none).
+  setTimeout(() => sheetEl?.querySelector('.fm-row, [data-action="rerun"]')?.focus(), 0)
 }
 
 export function closeSheet() {
@@ -63,16 +70,20 @@ function render() {
       <button class="fm-close" data-action="close" title="Close">×</button>
     </div>
   `
-  const jurisdictionsLine = result.jurisdictions.length
+  // Special case: no jurisdictions active. Don't show the green ✓ — that
+  // reads as "you're good", but it's actually "we have no rules to apply."
+  const noJurisdictions = !result.jurisdictions.length
+
+  const jurisdictionsLine = !noJurisdictions
     ? `<div class="fm-jurisdictions">
          ${result.jurisdictions.map(j =>
            `<span class="fm-chip">${escape(j.name)}</span>`
          ).join('')}
        </div>`
-    : `<div class="fm-jurisdictions fm-empty">No jurisdictions selected.</div>`
+    : ''
 
   const summary = result.summary
-  const summaryLine = `
+  const summaryLine = noJurisdictions ? '' : `
     <div class="fm-summary">
       <span class="fm-count fm-err">${summary.errors} ${summary.errors === 1 ? 'violation' : 'violations'}</span>
       ${summary.warnings ? `<span class="fm-count fm-warn">${summary.warnings} warning</span>` : ''}
@@ -80,15 +91,22 @@ function render() {
     </div>
   `
 
-  const list = result.violations.length
-    ? result.violations.map(v => violationRow(v, v.id === focusedId)).join('')
-    : `<div class="fm-clean">
-         <div class="fm-clean-glyph">✓</div>
-         <div class="fm-clean-msg">No violations under the active jurisdiction${result.jurisdictions.length === 1 ? '' : 's'}.</div>
-         <div class="fm-clean-disclaimer">Defaults are seeded from public code; verify with your AHJ before relying on this.</div>
+  const list = noJurisdictions
+    ? `<div class="fm-empty-state">
+         <div class="fm-empty-glyph">⚠</div>
+         <div class="fm-empty-title">No jurisdictions selected</div>
+         <div class="fm-empty-msg">Pick at least one AHJ before this check has anything to enforce.</div>
+         <button class="block-btn" data-action="settings">Open Fire Code settings</button>
        </div>`
+    : result.violations.length
+      ? result.violations.map(v => violationRow(v, v.id === focusedId)).join('')
+      : `<div class="fm-clean">
+           <div class="fm-clean-glyph">✓</div>
+           <div class="fm-clean-msg">No violations under the active jurisdiction${result.jurisdictions.length === 1 ? '' : 's'}.</div>
+           <div class="fm-clean-disclaimer">Defaults are seeded from public code; verify with your AHJ before relying on this.</div>
+         </div>`
 
-  const footer = `
+  const footer = noJurisdictions ? '' : `
     <div class="fm-footer">
       <button class="ghost-btn small" data-action="settings">Jurisdictions…</button>
       <button class="block-btn small" data-action="rerun">Re-run check</button>
@@ -117,7 +135,7 @@ function render() {
 function violationRow(v, isFocused) {
   if (v.severity === 'info') {
     return `
-      <div class="fm-row fm-row-info ${isFocused ? 'focused' : ''}" data-violation-id="${v.id}">
+      <div class="fm-row fm-row-info ${isFocused ? 'focused' : ''}" data-violation-id="${v.id}" tabindex="0">
         <span class="fm-num fm-info">i</span>
         <div class="fm-msg-block">
           <div class="fm-msg">${escape(v.message)}</div>
@@ -126,7 +144,7 @@ function violationRow(v, isFocused) {
     `
   }
   return `
-    <div class="fm-row ${isFocused ? 'focused' : ''}" data-violation-id="${v.id}">
+    <div class="fm-row ${isFocused ? 'focused' : ''}" data-violation-id="${v.id}" tabindex="0">
       <span class="fm-num">${v.id}</span>
       <div class="fm-msg-block">
         <div class="fm-rule-label">${escape(v.ruleLabel || v.ruleId)}</div>
@@ -159,6 +177,3 @@ function zoomTo(anchor) {
   })
 }
 
-function escape(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))
-}
