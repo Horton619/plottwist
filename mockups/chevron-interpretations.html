@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PlotTwist — chevron interpretations</title>
+<style>
+  :root {
+    --bg:           #070910;
+    --bg-panel:     #0f131e;
+    --bg-elevated:  #161b27;
+    --border:       #2a2f3d;
+    --border-soft:  #1c2030;
+    --text:         #e8ebf3;
+    --text-dim:     #aab0c0;
+    --text-faint:   #6b7385;
+    --accent:       #FF2D9D;
+  }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  body { padding: 24px 32px 80px; }
+  h1 { margin: 0 0 6px; font-weight: 600; font-size: 22px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 28px; max-width: 720px; line-height: 1.5; }
+  .sub b { color: var(--accent); font-weight: 600; }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+  }
+
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex; flex-direction: column;
+  }
+  .panel h2 {
+    margin: 0 0 4px; font-size: 14px; font-weight: 600;
+  }
+  .panel .desc {
+    font-size: 12px; color: var(--text-faint);
+    margin-bottom: 12px; line-height: 1.5;
+    min-height: 50px;
+  }
+  .panel .verdict {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: var(--bg-elevated);
+    border-left: 3px solid var(--accent);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    border-radius: 4px;
+  }
+  .panel .verdict.match {
+    border-left-color: #5be7d4;
+    color: var(--text);
+  }
+
+  svg.scene {
+    background: #0a0d16;
+    border: 1px dashed var(--border-soft);
+    border-radius: 6px;
+    width: 100%;
+    aspect-ratio: 1;
+  }
+
+  /* Object styling — matches the live app */
+  .poly       { fill: none; stroke: #5a6378; stroke-width: 0.5; stroke-dasharray: 8 4; vector-effect: non-scaling-stroke; }
+  .stage      { fill: #2d5a8a; fill-opacity: 0.32; stroke: #5a8ec5; stroke-width: 0.4; vector-effect: non-scaling-stroke; }
+  .stage-lbl  { fill: #aab0c0; font: 6px ui-monospace, monospace; }
+  .aisle      { fill: #d4a72c; fill-opacity: 0.10; stroke: #d4a72c; stroke-width: 0.5; stroke-dasharray: 4 3; stroke-opacity: 0.55; vector-effect: non-scaling-stroke; }
+  .table      { fill: #1a1f2e; stroke: #FF2D9D; stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+  .chair      { fill: #FF2D9D; fill-opacity: 0.32; stroke: #FF2D9D; stroke-width: 0.4; vector-effect: non-scaling-stroke; }
+  .chair-back { stroke: #FF2D9D; stroke-width: 1.6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .pivot      { fill: #5be7d4; }
+  .pivot-lbl  { fill: #5be7d4; font: 5px ui-monospace, monospace; }
+
+  .legend {
+    margin-top: 16px;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .legend dt { color: #5be7d4; font-weight: 600; display: inline; }
+  .legend dd { display: inline; margin: 0 0 0 4px; }
+  .legend dl { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>Chevron seating — interpretations</h1>
+<p class="sub">
+  Updated after your feedback: the correct interpretation is <b>panel D</b> at the bottom — section stays rectangular, aisle stays straight, but each ROW within an outer section is a continuous angled line of tables anchored at the aisle, rotated as a unit.
+</p>
+
+<div class="row">
+
+  <!-- ─── Interpretation A: rotate around section centroid (CURRENT) ──────── -->
+  <div class="panel">
+    <h2>A. Rotate around centroid <span style="color:var(--text-faint); font-weight:400;">— current</span></h2>
+    <div class="desc">Whole section rotates around its centroid. Aisle stays straight; section's inner edge tilts away from the aisle on one side and toward it on the other.</div>
+    <svg class="scene" viewBox="-510 -50 1020 720">
+      <!-- room polygon: 1000" wide × 720" deep, top of room at y=0 -->
+      <rect class="poly" x="-500" y="0" width="1000" height="720"/>
+      <!-- stage -->
+      <rect class="stage" x="-200" y="-40" width="400" height="40"/>
+      <text class="stage-lbl" x="0" y="-15" text-anchor="middle">STAGE</text>
+
+      <!-- aisles (3 vertical aisles split 4 sections of 200" wide each + 4 aisles of 50") -->
+      <!-- Section centers: -425, -150, 150, 425. Each section 200" wide. Aisle width 50". -->
+      <!-- aisle 1: x = -300 to -250 (between far-left and left-center) -->
+      <!-- aisle 2: x = -50 to 50 (center aisle) -->
+      <!-- aisle 3: x = 250 to 300 -->
+      <rect class="aisle" x="-300" y="50" width="50" height="640"/>
+      <rect class="aisle" x="-50"  y="50" width="50" height="640"/>
+      <rect class="aisle" x="250"  y="50" width="50" height="640"/>
+
+      <!-- ── Sections — each is a column of 6 rows ─── -->
+      <!-- Tables: 96" w × 18" d, with 3 chairs (18×20 each) on south side. Rows pitched 96" apart. -->
+      <!-- LEFT-OUTER (chevron, rotated by -15° around CENTROID at (-400, 360)) -->
+      <g transform="rotate(-15 -400 360)">
+        <use href="#table-row" x="-500" y="80"/>
+        <use href="#table-row" x="-500" y="180"/>
+        <use href="#table-row" x="-500" y="280"/>
+        <use href="#table-row" x="-500" y="380"/>
+        <use href="#table-row" x="-500" y="480"/>
+        <use href="#table-row" x="-500" y="580"/>
+      </g>
+      <!-- pivot dot at section centroid -->
+      <circle class="pivot" cx="-400" cy="360" r="4"/>
+      <text class="pivot-lbl" x="-390" y="360" alignment-baseline="middle">centroid</text>
+
+      <!-- LEFT-CENTER (straight) -->
+      <g transform="translate(-250 0)">
+        <use href="#table-row" x="0" y="80"/>
+        <use href="#table-row" x="0" y="180"/>
+        <use href="#table-row" x="0" y="280"/>
+        <use href="#table-row" x="0" y="380"/>
+        <use href="#table-row" x="0" y="480"/>
+        <use href="#table-row" x="0" y="580"/>
+      </g>
+
+      <!-- RIGHT-CENTER (straight) -->
+      <g transform="translate(50 0)">
+        <use href="#table-row" x="0" y="80"/>
+        <use href="#table-row" x="0" y="180"/>
+        <use href="#table-row" x="0" y="280"/>
+        <use href="#table-row" x="0" y="380"/>
+        <use href="#table-row" x="0" y="480"/>
+        <use href="#table-row" x="0" y="580"/>
+      </g>
+
+      <!-- RIGHT-OUTER (chevron, +15° around centroid (400, 360)) -->
+      <g transform="rotate(15 400 360)">
+        <use href="#table-row" x="300" y="80"/>
+        <use href="#table-row" x="300" y="180"/>
+        <use href="#table-row" x="300" y="280"/>
+        <use href="#table-row" x="300" y="380"/>
+        <use href="#table-row" x="300" y="480"/>
+        <use href="#table-row" x="300" y="580"/>
+      </g>
+      <circle class="pivot" cx="400" cy="360" r="4"/>
+    </svg>
+    <div class="verdict">Chevron tables push INTO the straight aisles at the front and pull AWAY at the back (or vice versa). Inside edges no longer line up with anything.</div>
+  </div>
+
+  <!-- ─── Interpretation B: rotate around FRONT-INNER corner ─────────────── -->
+  <div class="panel">
+    <h2>B. Rotate around front-inner corner</h2>
+    <div class="desc">Pivot is the corner of each chevron section closest to the stage AND closest to the venue centerline. The whole section swings outward. Adjacent aisle becomes a TRAPEZOID matching the tilted inner edge.</div>
+    <svg class="scene" viewBox="-510 -50 1020 720">
+      <rect class="poly" x="-500" y="0" width="1000" height="720"/>
+      <rect class="stage" x="-200" y="-40" width="400" height="40"/>
+      <text class="stage-lbl" x="0" y="-15" text-anchor="middle">STAGE</text>
+
+      <!-- center aisle -->
+      <rect class="aisle" x="-50" y="50" width="50" height="640"/>
+
+      <!-- Trapezoidal aisles for the chevron sections (outer-aisle is angled) -->
+      <!-- LEFT trapezoid aisle: inner edge straight at x=-250, outer edge tilted -->
+      <polygon class="aisle" points="-300,50 -250,50 -250,690 -300,690 -467,690 -300,50"/>
+      <!-- Wait that's not right. Let me redo. Inner edge of aisle stays at -250, outer edge follows -300 at front rotated to -467 at back. -->
+      <!-- Actually for B, the chevron section pivots around its front-inner corner (-300, 50), so its inner-edge runs from (-300, 50) angling out-and-down. Aisle goes from straight at x=[-300, -250] near the front to widening as the chevron section's inner edge moves left. -->
+      <!-- LEFT chevron section pivot at front-inner corner (-300, 50) -->
+      <g transform="rotate(-15 -300 50)">
+        <use href="#table-row" x="-500" y="80"/>
+        <use href="#table-row" x="-500" y="180"/>
+        <use href="#table-row" x="-500" y="280"/>
+        <use href="#table-row" x="-500" y="380"/>
+        <use href="#table-row" x="-500" y="480"/>
+        <use href="#table-row" x="-500" y="580"/>
+      </g>
+      <circle class="pivot" cx="-300" cy="50" r="4"/>
+      <text class="pivot-lbl" x="-294" y="44" text-anchor="start">pivot</text>
+
+      <!-- center sections (straight) -->
+      <g transform="translate(-250 0)">
+        <use href="#table-row" x="0" y="80"/>
+        <use href="#table-row" x="0" y="180"/>
+        <use href="#table-row" x="0" y="280"/>
+        <use href="#table-row" x="0" y="380"/>
+        <use href="#table-row" x="0" y="480"/>
+        <use href="#table-row" x="0" y="580"/>
+      </g>
+      <g transform="translate(50 0)">
+        <use href="#table-row" x="0" y="80"/>
+        <use href="#table-row" x="0" y="180"/>
+        <use href="#table-row" x="0" y="280"/>
+        <use href="#table-row" x="0" y="380"/>
+        <use href="#table-row" x="0" y="480"/>
+        <use href="#table-row" x="0" y="580"/>
+      </g>
+
+      <!-- RIGHT chevron section pivot at front-inner corner (300, 50) -->
+      <g transform="rotate(15 300 50)">
+        <use href="#table-row" x="300" y="80"/>
+        <use href="#table-row" x="300" y="180"/>
+        <use href="#table-row" x="300" y="280"/>
+        <use href="#table-row" x="300" y="380"/>
+        <use href="#table-row" x="300" y="480"/>
+        <use href="#table-row" x="300" y="580"/>
+      </g>
+      <circle class="pivot" cx="300" cy="50" r="4"/>
+    </svg>
+    <div class="verdict match">Inner edge stays anchored at the front. The aisle is now a TRAPEZOID — narrow at the front (matching the original 50" aisle), wider at the back as the chevron section swings out. Matches your reference image.</div>
+  </div>
+
+  <!-- ─── Interpretation C: per-chair rotation, positions on grid ────────── -->
+  <div class="panel">
+    <h2>C. Per-chair rotation only</h2>
+    <div class="desc">Chair / table positions stay on the original rectangular grid. Each chair / table gets its rotation set to the chevron angle, but doesn't move. Section is still rectangular, aisle is straight.</div>
+    <svg class="scene" viewBox="-510 -50 1020 720">
+      <rect class="poly" x="-500" y="0" width="1000" height="720"/>
+      <rect class="stage" x="-200" y="-40" width="400" height="40"/>
+      <text class="stage-lbl" x="0" y="-15" text-anchor="middle">STAGE</text>
+
+      <!-- straight aisles like A -->
+      <rect class="aisle" x="-300" y="50" width="50" height="640"/>
+      <rect class="aisle" x="-50"  y="50" width="50" height="640"/>
+      <rect class="aisle" x="250"  y="50" width="50" height="640"/>
+
+      <!-- LEFT outer: tables stay in regular grid; each table+chairs ROTATED in place -->
+      <g>
+        <use href="#table-row-rotated-cw" x="-500" y="80"/>
+        <use href="#table-row-rotated-cw" x="-500" y="180"/>
+        <use href="#table-row-rotated-cw" x="-500" y="280"/>
+        <use href="#table-row-rotated-cw" x="-500" y="380"/>
+        <use href="#table-row-rotated-cw" x="-500" y="480"/>
+        <use href="#table-row-rotated-cw" x="-500" y="580"/>
+      </g>
+
+      <!-- center sections -->
+      <g transform="translate(-250 0)">
+        <use href="#table-row" x="0" y="80"/>
+        <use href="#table-row" x="0" y="180"/>
+        <use href="#table-row" x="0" y="280"/>
+        <use href="#table-row" x="0" y="380"/>
+        <use href="#table-row" x="0" y="480"/>
+        <use href="#table-row" x="0" y="580"/>
+      </g>
+      <g transform="translate(50 0)">
+        <use href="#table-row" x="0" y="80"/>
+        <use href="#table-row" x="0" y="180"/>
+        <use href="#table-row" x="0" y="280"/>
+        <use href="#table-row" x="0" y="380"/>
+        <use href="#table-row" x="0" y="480"/>
+        <use href="#table-row" x="0" y="580"/>
+      </g>
+
+      <!-- RIGHT outer -->
+      <g>
+        <use href="#table-row-rotated-ccw" x="300" y="80"/>
+        <use href="#table-row-rotated-ccw" x="300" y="180"/>
+        <use href="#table-row-rotated-ccw" x="300" y="280"/>
+        <use href="#table-row-rotated-ccw" x="300" y="380"/>
+        <use href="#table-row-rotated-ccw" x="300" y="480"/>
+        <use href="#table-row-rotated-ccw" x="300" y="580"/>
+      </g>
+    </svg>
+    <div class="verdict">Each chair "tips" by 15°. Aisles stay straight. Visually subtle — chairs face slightly inward but the row itself is still horizontal. Doesn't match the reference image.</div>
+  </div>
+
+</div>
+
+<dl class="legend">
+  <dt>What I think you want — interpretation B.</dt>
+  <dd>Outer chevron sections rotate as rigid units around their FRONT-INNER corner. The aisle adjacent to a chevron section is no longer a uniform-width vertical strip — it's a wedge / trapezoid whose outer edge follows the section's tilted inner edge. The "aisle dictates the shape of the section" because its INNER edge (against the central section) stays a clean straight line; the section's INNER edge flushes against the aisle's tilted OUTER edge.</dd>
+</dl>
+
+<!-- Reusable template for one row of tables (3 tables of 96" × 18", with 3 chairs of 18" × 20" hanging off the bottom) -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="one-table" viewBox="0 0 100 38" width="100" height="38">
+      <rect class="table"     x="0"    y="0"  width="96" height="18" rx="2"/>
+      <rect class="chair"     x="3"    y="18" width="18" height="20" rx="1.5"/>
+      <line class="chair-back" x1="3"  y1="38" x2="21" y2="38"/>
+      <rect class="chair"     x="39"   y="18" width="18" height="20" rx="1.5"/>
+      <line class="chair-back" x1="39" y1="38" x2="57" y2="38"/>
+      <rect class="chair"     x="75"   y="18" width="18" height="20" rx="1.5"/>
+      <line class="chair-back" x1="75" y1="38" x2="93" y2="38"/>
+    </symbol>
+
+    <!-- A row of 2 tables, 100" each, total ~200" wide -->
+    <symbol id="table-row" viewBox="0 0 200 38" width="200" height="38">
+      <use href="#one-table" x="0"   y="0"/>
+      <use href="#one-table" x="100" y="0"/>
+    </symbol>
+
+    <!-- Pre-rotated rows for interpretation C: each TABLE rotated by ±15° in place -->
+    <symbol id="one-table-cw" viewBox="-10 -10 120 60" width="120" height="60">
+      <g transform="rotate(15 50 19)">
+        <rect class="table"     x="0"    y="0"  width="96" height="18" rx="2"/>
+        <rect class="chair"     x="3"    y="18" width="18" height="20" rx="1.5"/>
+        <line class="chair-back" x1="3"  y1="38" x2="21" y2="38"/>
+        <rect class="chair"     x="39"   y="18" width="18" height="20" rx="1.5"/>
+        <line class="chair-back" x1="39" y1="38" x2="57" y2="38"/>
+        <rect class="chair"     x="75"   y="18" width="18" height="20" rx="1.5"/>
+        <line class="chair-back" x1="75" y1="38" x2="93" y2="38"/>
+      </g>
+    </symbol>
+    <symbol id="one-table-ccw" viewBox="-10 -10 120 60" width="120" height="60">
+      <g transform="rotate(-15 50 19)">
+        <rect class="table"     x="0"    y="0"  width="96" height="18" rx="2"/>
+        <rect class="chair"     x="3"    y="18" width="18" height="20" rx="1.5"/>
+        <line class="chair-back" x1="3"  y1="38" x2="21" y2="38"/>
+        <rect class="chair"     x="39"   y="18" width="18" height="20" rx="1.5"/>
+        <line class="chair-back" x1="39" y1="38" x2="57" y2="38"/>
+        <rect class="chair"     x="75"   y="18" width="18" height="20" rx="1.5"/>
+        <line class="chair-back" x1="75" y1="38" x2="93" y2="38"/>
+      </g>
+    </symbol>
+    <symbol id="table-row-rotated-cw"  viewBox="0 0 200 60" width="200" height="60">
+      <use href="#one-table-cw"  x="0"   y="0"/>
+      <use href="#one-table-cw"  x="100" y="0"/>
+    </symbol>
+    <symbol id="table-row-rotated-ccw" viewBox="0 0 200 60" width="200" height="60">
+      <use href="#one-table-ccw" x="0"   y="0"/>
+      <use href="#one-table-ccw" x="100" y="0"/>
+    </symbol>
+  </defs>
+</svg>
+
+</body>
+</html>

@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('plottwist', {
 
   // App menu events
   onMenuEvent: (cb) => {
-    const events = ['menu-new-project', 'menu-open-project', 'menu-save-project', 'menu-save-project-as', 'menu-save-and-quit', 'menu-insert-image']
+    const events = ['menu-new-project', 'menu-open-project', 'menu-save-project', 'menu-save-project-as', 'menu-save-and-quit', 'menu-insert-image', 'menu-open-settings']
     events.forEach(ev => ipcRenderer.on(ev, () => cb(ev)))
   },
 
@@ -26,5 +26,6 @@ contextBridge.exposeInMainWorld('plottwist', {
 
   // App / updates
   getAppVersion:   () => ipcRenderer.invoke('get-app-version'),
-  checkForUpdates: () => ipcRenderer.invoke('check-for-updates')
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  openExternal:    (url) => ipcRenderer.invoke('open-external', url),
 })

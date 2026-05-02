@@ -1,13 +1,29 @@
 // Right panel: live properties of the current selection.
 
-import { state, setState, subscribe, mutateProject, selectedObjects, TYPE_STYLES, styleFor, objectName, activeRoom, uid } from '../state.js'
+import { state, setState, subscribe, mutateProject, selectedObjects, TYPE_STYLES, styleFor, objectName, activeRoom, activeLayout, uid } from '../state.js'
 import { objectBounds, objectArea } from '../geom.js'
 import { formatInches, formatSqFt, parseInches } from '../units.js'
 import { unionShapes, mergedType } from '../shapeOps.js'
 import { startCalibration } from '../canvas.js'
+import { solveSeatingZone } from '../solver/index.js'
+import { STYLE_DEFAULTS, TABLE_PRESETS, ROUND_PRESETS, MIXED_TABLE_PRESETS } from '../tools/polygonTool.js'
+import { getSetting } from '../settings.js'
 
 function escapeAttr(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+// Coordinate display helpers — show X/Y relative to the project origin so
+// users can read positions from their chosen reference point. Internal
+// storage stays in world coords; we only translate at the input boundary.
+function originX() { return state.project.origin?.x || 0 }
+function originY() { return state.project.origin?.y || 0 }
+function formatCoord(value, axis) {
+  return formatInches(value - (axis === 'x' ? originX() : originY()))
+}
+function parseCoord(text, axis) {
+  const v = parseInches(text)
+  return v == null ? null : v + (axis === 'x' ? originX() : originY())
 }
 
 export function initObjectInfo(host) {
@@ -54,8 +70,11 @@ export function initObjectInfo(host) {
     const area = objectArea(o)
     const s = styleFor(o)
     const typeLabel = (TYPE_STYLES[o.type] && TYPE_STYLES[o.type].label) || o.type
-    const kindLabel = ({ rect: 'Rectangle', polygon: 'Polygon', image: 'Image' })[o.kind] || o.kind
+    const kindLabel = ({ rect: 'Rectangle', polygon: 'Polygon', image: 'Image', dim: 'Dim Line' })[o.kind] || o.kind
     const isBoxed = o.kind === 'rect' || o.kind === 'image'
+    const isDim   = o.kind === 'dim'
+    const dimLen  = isDim ? Math.hypot(o.x2 - o.x1, o.y2 - o.y1) : 0
+    const dimAngle = isDim ? Math.atan2(o.y2 - o.y1, o.x2 - o.x1) * 180 / Math.PI : 0
 
     panel.innerHTML = `
       <div class="panel-section">
@@ -69,13 +88,24 @@ export function initObjectInfo(host) {
         ${isBoxed ? `
           <div class="prop-row"><span class="prop-key">Width</span><input class="prop-input" data-field="w" value="${formatInches(o.w)}"></div>
           <div class="prop-row"><span class="prop-key">Height</span><input class="prop-input" data-field="h" value="${formatInches(o.h)}"></div>
-          <div class="prop-row"><span class="prop-key">X</span><input class="prop-input" data-field="x" value="${formatInches(o.x)}"></div>
-          <div class="prop-row"><span class="prop-key">Y</span><input class="prop-input" data-field="y" value="${formatInches(o.y)}"></div>
+          <div class="prop-row"><span class="prop-key">X</span><input class="prop-input" data-coord="x" data-field="x" value="${formatCoord(o.x, 'x')}"></div>
+          <div class="prop-row"><span class="prop-key">Y</span><input class="prop-input" data-coord="y" data-field="y" value="${formatCoord(o.y, 'y')}"></div>
+          <div class="prop-row"><span class="prop-key">Area</span><span class="prop-val accent">${formatSqFt(area)}</span></div>
+        ` : isDim ? `
+          <div class="prop-row"><span class="prop-key">Length</span><input class="prop-input" data-dim="length" value="${formatInches(dimLen)}"></div>
+          <div class="prop-row"><span class="prop-key">Angle</span>
+            <input type="number" class="num-input" data-dim="angle" min="-180" max="360" step="0.5" value="${Math.round(dimAngle * 10) / 10}">
+            <span class="prop-val small">°</span>
+          </div>
+          <div class="prop-row"><span class="prop-key">Start X</span><input class="prop-input" data-coord="x" data-field="x1" value="${formatCoord(o.x1, 'x')}"></div>
+          <div class="prop-row"><span class="prop-key">Start Y</span><input class="prop-input" data-coord="y" data-field="y1" value="${formatCoord(o.y1, 'y')}"></div>
+          <div class="prop-row"><span class="prop-key">End X</span><input class="prop-input" data-coord="x" data-field="x2" value="${formatCoord(o.x2, 'x')}"></div>
+          <div class="prop-row"><span class="prop-key">End Y</span><input class="prop-input" data-coord="y" data-field="y2" value="${formatCoord(o.y2, 'y')}"></div>
         ` : `
           <div class="prop-row"><span class="prop-key">Bounding</span><span class="prop-val">${formatInches(b.w)} × ${formatInches(b.h)}</span></div>
           <div class="prop-row"><span class="prop-key">Vertices</span><span class="prop-val">${o.vertices.length}</span></div>
+          <div class="prop-row"><span class="prop-key">Area</span><span class="prop-val accent">${formatSqFt(area)}</span></div>
         `}
-        <div class="prop-row"><span class="prop-key">Area</span><span class="prop-val accent">${formatSqFt(area)}</span></div>
       </div>
       ${o.kind === 'image' ? `
         <div class="panel-section">
@@ -88,7 +118,7 @@ export function initObjectInfo(host) {
           <button class="block-btn" data-action="scale">Set Scale…</button>
           <p class="panel-hint">Click two points on the image, then enter the real-world distance between them.</p>
         </div>
-      ` : `
+      ` : isDim ? '' : `
         <div class="panel-section">
           <div class="panel-section-title">Style</div>
           <div class="prop-row">
@@ -103,6 +133,7 @@ export function initObjectInfo(host) {
           </div>
         </div>
       `}
+      ${o.type === 'seating' ? renderSeatingControls(o) : ''}
       ${o.kind === 'polygon' ? `
         <div class="panel-section">
           <div class="panel-section-title">Vertices</div>
@@ -110,8 +141,8 @@ export function initObjectInfo(host) {
             ${o.vertices.map(([x, y], i) => `
               <div class="vertex-row">
                 <span class="vertex-idx">${i}</span>
-                <input class="prop-input compact" data-vertex="${i}" data-axis="x" value="${formatInches(x)}">
-                <input class="prop-input compact" data-vertex="${i}" data-axis="y" value="${formatInches(y)}">
+                <input class="prop-input compact" data-vertex="${i}" data-axis="x" value="${formatCoord(x, 'x')}">
+                <input class="prop-input compact" data-vertex="${i}" data-axis="y" value="${formatCoord(y, 'y')}">
               </div>
             `).join('')}
           </div>
@@ -127,13 +158,16 @@ export function initObjectInfo(host) {
       const handler = () => {
         const field = inp.dataset.field
         if (field) {
-          const v = parseInches(inp.value)
+          // X / Y / x1 / y1 / x2 / y2 are origin-relative; everything else
+          // (W, H, etc.) is a delta and parses with plain inches.
+          const coordAxis = inp.dataset.coord
+          const v = coordAxis ? parseCoord(inp.value, coordAxis) : parseInches(inp.value)
           if (v != null) update({ [field]: v })
         } else if (inp.dataset.vertex != null) {
-          const v = parseInches(inp.value)
+          const axis = inp.dataset.axis
+          const v = parseCoord(inp.value, axis)
           if (v == null) return
           const idx  = parseInt(inp.dataset.vertex, 10)
-          const axis = inp.dataset.axis
           mutateProject(() => {
             if (axis === 'x') o.vertices[idx][0] = v
             else              o.vertices[idx][1] = v
@@ -143,6 +177,44 @@ export function initObjectInfo(host) {
       inp.addEventListener('change', handler)
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') { handler(); inp.blur() } })
     })
+
+    // Dim-line length / angle inputs pivot the END point around the START so
+    // the start anchor stays fixed. Both feel more useful day-to-day than
+    // editing raw endpoint coordinates.
+    panel.querySelectorAll('[data-dim]').forEach(inp => {
+      const field = inp.dataset.dim
+      const handler = () => {
+        if (field === 'length') {
+          const v = parseInches(inp.value)
+          if (v == null || v < 1) return
+          const dx = o.x2 - o.x1, dy = o.y2 - o.y1
+          const cur = Math.hypot(dx, dy)
+          if (cur < 0.001) {
+            // Degenerate dim — default to a horizontal extension.
+            mutateProject(() => { o.x2 = o.x1 + v; o.y2 = o.y1 })
+            return
+          }
+          const ux = dx / cur, uy = dy / cur
+          mutateProject(() => {
+            o.x2 = Math.round(o.x1 + ux * v)
+            o.y2 = Math.round(o.y1 + uy * v)
+          })
+        } else if (field === 'angle') {
+          const deg = parseFloat(inp.value)
+          if (!Number.isFinite(deg)) return
+          const dx = o.x2 - o.x1, dy = o.y2 - o.y1
+          const cur = Math.hypot(dx, dy) || 1
+          const r = deg * Math.PI / 180
+          mutateProject(() => {
+            o.x2 = Math.round(o.x1 + Math.cos(r) * cur)
+            o.y2 = Math.round(o.y1 + Math.sin(r) * cur)
+          })
+        }
+      }
+      inp.addEventListener('change', handler)
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { handler(); inp.blur() } })
+    })
+
     const titleInput = panel.querySelector('.title-input')
     if (titleInput) {
       titleInput.addEventListener('change', () => update({ name: titleInput.value.trim() || undefined }))
@@ -154,13 +226,390 @@ export function initObjectInfo(host) {
       inp.addEventListener('input', () => update({ [inp.dataset.field]: parseFloat(inp.value) }))
     })
     panel.querySelectorAll('.num-input').forEach(inp => {
+      if (!inp.dataset.field) return    // seating-zone inputs use data-zone instead
       inp.addEventListener('change', () => update({ [inp.dataset.field]: parseFloat(inp.value) }))
     })
     const scaleBtn = panel.querySelector('[data-action="scale"]')
     if (scaleBtn) {
       scaleBtn.addEventListener('click', () => startCalibration(o.id))
     }
+    if (o.type === 'seating') wireSeatingControls(panel, o)
   }
+}
+
+// ── Seating zone controls (theater for v1) ────────────────────────────────
+
+function renderSeatingControls(o) {
+  const result     = o.result
+  // Read the new `aisles` config; tolerate the legacy centerAisle shape on
+  // older zones that haven't been re-saved yet.
+  const aisleCount = o.aisles?.count ?? (o.centerAisle?.enabled === false ? 0 : 1)
+  const aisleW     = o.aisles?.width ?? o.centerAisle?.width ?? 144
+  const styleLabel = o.style.charAt(0).toUpperCase() + o.style.slice(1)
+
+  // Style-specific control rows.
+  const styleSpecific =
+      o.style === 'classroom' ? renderClassroomRows(o)
+    : o.style === 'rounds'    ? renderRoundsRows(o)
+    : o.style === 'mixed'     ? renderMixedRows(o)
+    :                            renderTheaterRows(o)
+
+  // Aisle controls apply to all styles. Mixed forwards the aisle config to
+  // its inner classroom + theater solvers (with classroom's section width
+  // pinned to the theater's so the aisles line up cleanly through both).
+  const showAisleControls = true
+  // Pattern dropdown is only meaningful for row-based styles right now.
+  const showPatternControl = (o.style === 'theater' || o.style === 'classroom')
+
+  return `
+    <div class="panel-section">
+      <div class="panel-section-title">Seating — ${styleLabel}</div>
+      <div class="prop-row"><span class="prop-key">Style</span>
+        <select class="select-input" data-zone="style">
+          <option value="theater"   ${o.style === 'theater'   ? 'selected' : ''}>Theater</option>
+          <option value="classroom" ${o.style === 'classroom' ? 'selected' : ''}>Classroom</option>
+          <option value="rounds"    ${o.style === 'rounds'    ? 'selected' : ''}>Rounds</option>
+          <option value="mixed"     ${o.style === 'mixed'     ? 'selected' : ''}>Mixed</option>
+        </select>
+      </div>
+      ${showPatternControl ? `
+        <div class="prop-row"><span class="prop-key">Pattern</span>
+          <select class="select-input" data-zone="pattern">
+            <option value="straight" ${o.pattern === 'straight' ? 'selected' : ''}>Straight</option>
+            <option value="chevron"  disabled>Chevron (soon)</option>
+          </select>
+        </div>
+      ` : ''}
+      <div class="prop-row"><span class="prop-key">Facing</span>
+        <input type="number" class="num-input" data-zone="rotation" min="0" max="359" step="5" value="${o.rotation || 0}">
+        <span class="prop-val small">°</span>
+      </div>
+      <div class="prop-row" title="Aim for this seat count. The solver fills full rows; for Mixed it picks the classroom/theater split that lands closest to the goal. A bit of spill above the goal is expected.">
+        <span class="prop-key">Goal</span>
+        <input type="checkbox" data-zone-cap="enabled" ${o.preference === 'exact' ? 'checked' : ''}
+               title="Tick to set a target seat count. The solver stops adding rows once the goal is met, finishing the current row.">
+        <input type="number" class="num-input" data-zone="target" min="1" step="1"
+               value="${o.target || ''}" placeholder="seat goal"
+               title="Goal seat count — solver aims for this. Mixed: optimizes the split. Theater/Classroom/Rounds: stops after a row crosses the goal."
+               ${o.preference === 'exact' ? '' : 'disabled'}>
+      </div>
+      ${styleSpecific}
+      ${showAisleControls ? `
+        <div class="prop-row"><span class="prop-key">Aisles</span>
+          <input type="number" class="num-input" data-zone-aisle="count" min="0" max="9" step="1" value="${aisleCount}">
+          <input class="prop-input" data-zone-aisle="width" value="${formatInches(aisleW)}" ${aisleCount > 0 ? '' : 'disabled'} placeholder="width">
+        </div>
+      ` : ''}
+      <button class="block-btn solve-btn" data-action="solve">Solve</button>
+      ${result ? `
+        <div class="solve-result">
+          <div class="prop-row"><span class="prop-key">Seats</span><span class="prop-val accent">${result.totalSeats}</span></div>
+          <div class="prop-row"><span class="prop-key">Rows</span><span class="prop-val">${result.rows.length}</span></div>
+          ${result.tables?.length ? `<div class="prop-row"><span class="prop-key">Tables</span><span class="prop-val">${result.tables.length}</span></div>` : ''}
+          ${result.warnings && result.warnings.length ? `<p class="panel-hint warn">${result.warnings.join('<br>')}</p>` : ''}
+          <button class="ghost-btn small" data-action="clear-solve">Clear</button>
+        </div>
+      ` : '<p class="panel-hint">Drop a Seating zone, pick a style, hit Solve.</p>'}
+    </div>
+  `
+}
+
+function renderTheaterRows(o) {
+  return `
+    <div class="prop-row"><span class="prop-key">Row spacing</span>
+      <input class="prop-input" data-zone-inches="rowSpacing" value="${formatInches(o.rowSpacing || 20)}">
+    </div>
+    <div class="prop-row"><span class="prop-key">Max / row</span>
+      <input type="number" class="num-input" data-zone="maxPerRow" min="1" step="1" value="${o.maxPerRow || 12}">
+    </div>
+    ${renderChevronRows(o)}
+  `
+}
+
+function renderClassroomRows(o) {
+  // Match current dimensions to a preset id, else "custom".
+  const matched = TABLE_PRESETS.find(p => p.w === o.tableW && p.d === o.tableD)
+  const presetId = matched ? matched.id : 'custom'
+  return `
+    <div class="prop-row"><span class="prop-key">Table</span>
+      <select class="select-input" data-zone-table="preset">
+        ${TABLE_PRESETS.map(p => `<option value="${p.id}" ${p.id === presetId ? 'selected' : ''}>${p.label}</option>`).join('')}
+        ${matched ? '' : `<option value="custom" selected>Custom (${formatInches(o.tableW)} × ${formatInches(o.tableD)})</option>`}
+      </select>
+    </div>
+    <div class="prop-row"><span class="prop-key">Chairs / table</span>
+      <input type="number" class="num-input" data-zone="chairsPerTable" min="1" max="6" step="1" value="${o.chairsPerTable || 3}">
+    </div>
+    <div class="prop-row"><span class="prop-key">Row spacing</span>
+      <input class="prop-input" data-zone-inches="rowSpacing" value="${formatInches(o.rowSpacing || 54)}">
+    </div>
+    ${renderChevronRows(o)}
+  `
+}
+
+function renderRoundsRows(o) {
+  const matchedSize = ROUND_PRESETS.find(p => p.d === o.tableD)
+  const sizeId = matchedSize ? matchedSize.id : 'custom'
+  const chairs = o.chairsPerTable || 10
+  const layoutHint = chairs <= 6 ? 'Crescent — chairs face the stage.'
+                                 : 'Full circle — chairs around the table.'
+  return `
+    <div class="prop-row"><span class="prop-key">Table size</span>
+      <select class="select-input" data-zone-round="size">
+        ${ROUND_PRESETS.map(p => `<option value="${p.id}" ${p.id === sizeId ? 'selected' : ''}>${p.label}</option>`).join('')}
+        <option value="custom" ${sizeId === 'custom' ? 'selected' : ''}>Custom</option>
+      </select>
+    </div>
+    ${sizeId === 'custom' ? `
+      <div class="prop-row"><span class="prop-key">Diameter</span>
+        <input class="prop-input" data-zone-inches="tableD" value="${formatInches(o.tableD || 72)}">
+      </div>
+    ` : ''}
+    <div class="prop-row" title="≤ 6 chairs renders crescent (chairs face the stage). 7+ renders full circle.">
+      <span class="prop-key">Chairs / table</span>
+      <input type="number" class="num-input" data-zone="chairsPerTable" min="2" max="20" step="1" value="${chairs}">
+    </div>
+    <p class="panel-hint">${layoutHint}</p>
+    <div class="prop-row"><span class="prop-key">Spacing</span>
+      <input class="prop-input" data-zone-inches="tableSpacing" value="${formatInches(o.tableSpacing ?? 60)}">
+    </div>
+    <div class="prop-row" title="Checked: tables distribute evenly across each section. Unchecked: tables flush against the aisle, extra space accumulates at the polygon's outer edge.">
+      <span class="prop-key">Fixed aisles</span>
+      <input type="checkbox" data-zone-bool="fixedAisles" ${o.fixedAisles !== false ? 'checked' : ''}>
+      <span class="prop-val small">${o.fixedAisles !== false ? 'even gaps' : 'flush to aisle'}</span>
+    </div>
+    <div class="prop-row" title="Alternate rows shift by half a pitch so adjacent diagonal table centers stay the same distance apart as same-row neighbors (hex packing, 60° offset).">
+      <span class="prop-key">Offset rows</span>
+      <input type="checkbox" data-zone-bool="offsetRows" ${o.offsetRows ? 'checked' : ''}>
+    </div>
+  `
+}
+
+// Shared chevron rows used by theater / classroom / mixed renderers. Chevron
+// rotates the outermost sections of a multi-section layout inward by the
+// chevron angle (helpful for long ballrooms where end audiences need to face
+// the stage rather than straight ahead).
+function renderChevronRows(o) {
+  return `
+    <div class="prop-row" title="Outermost sections rotate inward toward the venue centerline. Only applies when there are 2+ sections (i.e., aisles are present).">
+      <span class="prop-key">Chevron</span>
+      <input type="checkbox" data-zone-bool="chevron" ${o.chevron ? 'checked' : ''}>
+    </div>
+    ${o.chevron ? `
+      <div class="prop-row" title="Positive = rows slant toward the stage at the outer end (default). Negative = rows slant away from the stage.">
+        <span class="prop-key">Chevron angle</span>
+        <input type="number" class="num-input" data-zone="chevronAngle" min="-45" max="45" step="1" value="${o.chevronAngle ?? 15}">
+        <span class="prop-val small">°</span>
+      </div>
+    ` : ''}
+  `
+}
+
+function renderMixedRows(o) {
+  const matched = MIXED_TABLE_PRESETS.find(p => p.w === o.tableW && p.d === o.tableD)
+  const presetId = matched ? matched.id : 'custom'
+  return `
+    <div class="prop-row"><span class="prop-key">Classroom depth</span>
+      <input class="prop-input" data-zone-inches="classroomDepth" value="${formatInches(o.classroomDepth || 0)}">
+    </div>
+    <div class="prop-row"><span class="prop-key">Table</span>
+      <select class="select-input" data-zone-mixed-table="preset">
+        ${MIXED_TABLE_PRESETS.map(p => `<option value="${p.id}" ${p.id === presetId ? 'selected' : ''}>${p.label}</option>`).join('')}
+        ${matched ? '' : `<option value="custom" selected>Custom (${formatInches(o.tableW)} × ${formatInches(o.tableD)})</option>`}
+      </select>
+    </div>
+    <div class="prop-row"><span class="prop-key">Chairs / table</span>
+      <input type="number" class="num-input" data-zone="chairsPerTable" min="2" max="4" step="1" value="${o.chairsPerTable || 2}">
+    </div>
+    <div class="prop-row" title="Walkway between the back of classroom and the front of theater. Default 6'.">
+      <span class="prop-key">Transition gap</span>
+      <input class="prop-input" data-zone-inches="transitionGap" value="${formatInches(o.transitionGap ?? 72)}">
+    </div>
+    <div class="prop-row"><span class="prop-key">Theater spacing</span>
+      <input class="prop-input" data-zone-inches="rowSpacing" value="${formatInches(o.rowSpacing || 20)}">
+    </div>
+    <div class="prop-row"><span class="prop-key">Classroom spacing</span>
+      <input class="prop-input" data-zone-inches="rowSpacingClassroom" value="${formatInches(o.rowSpacingClassroom || 54)}">
+    </div>
+    <div class="prop-row"><span class="prop-key">Max / row</span>
+      <input type="number" class="num-input" data-zone="maxPerRow" min="1" step="1" value="${o.maxPerRow || 12}">
+    </div>
+    ${renderChevronRows(o)}
+    <p class="panel-hint">Default 50/50 split; tick Goal with a target to auto-optimize the depth.</p>
+  `
+}
+
+function wireSeatingControls(panel, o) {
+  const update = (patch) => mutateProject(() => Object.assign(o, patch))
+
+  panel.querySelectorAll('[data-zone]').forEach(inp => {
+    const field = inp.dataset.zone
+    const handler = () => {
+      const raw = inp.type === 'number' ? parseFloat(inp.value) : inp.value
+      if (raw === '' || (typeof raw === 'number' && isNaN(raw))) return
+      // Style switch: apply that style's defaults for any field the user
+      // hasn't already touched (we treat present fields as touched).
+      if (field === 'style' && raw !== o.style) {
+        const defaults = STYLE_DEFAULTS[raw] || {}
+        const patch = { style: raw, result: null }   // clear stale solve
+        for (const [k, v] of Object.entries(defaults)) {
+          // Always overwrite style-specific defaults — switching styles
+          // is a fresh-start gesture.
+          patch[k] = v
+        }
+        // Settings overrides — pull live preference values for the new style
+        // so user defaults take effect on every style switch.
+        if (raw === 'theater') {
+          patch.rowSpacing = getSetting('defaultTheaterRowSpacing')
+        }
+        if (raw === 'classroom') {
+          patch.rowSpacing = getSetting('defaultClassroomRowSpacing')
+        }
+        if (raw === 'rounds') {
+          patch.tableD         = getSetting('defaultRoundTableSize')
+          patch.chairsPerTable = getSetting('defaultRoundChairCount')
+          patch.tableSpacing   = getSetting('defaultRoundTableSpacing')
+        }
+        if (raw === 'mixed') {
+          patch.rowSpacing          = getSetting('defaultTheaterRowSpacing')
+          patch.rowSpacingClassroom = getSetting('defaultClassroomRowSpacing')
+          patch.transitionGap       = getSetting('defaultMixedTransitionGap')
+        }
+        if (patch.aisles && patch.aisles.width != null) {
+          patch.aisles = { ...patch.aisles, width: getSetting('defaultAisleWidth') }
+        }
+        // Auto-pick a sensible chair count for the default classroom table.
+        if (raw === 'classroom' && !patch.chairsPerTable) {
+          const preset = TABLE_PRESETS.find(p => p.w === patch.tableW && p.d === patch.tableD)
+          if (preset) patch.chairsPerTable = preset.seats
+        }
+        // Mixed default: 50/50 split based on the polygon's current height,
+        // minus the transition gap so each section gets the same usable depth.
+        // The user can dial it from there; ticking Goal + a target then
+        // hands control to the optimizer.
+        if (raw === 'mixed') {
+          const b = objectBounds(o)
+          const gap = STYLE_DEFAULTS.mixed.transitionGap ?? 72
+          patch.classroomDepth = Math.round(Math.max(0, (b.h - gap) / 2))
+        }
+        mutateProject(() => Object.assign(o, patch))
+        return
+      }
+      update({ [field]: raw })
+    }
+    inp.addEventListener('change', handler)
+  })
+
+  // Classroom table-preset dropdown: writes tableW/tableD/chairsPerTable in one go.
+  panel.querySelectorAll('[data-zone-table]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const preset = TABLE_PRESETS.find(p => p.id === inp.value)
+      if (!preset) return
+      mutateProject(() => {
+        o.tableW = preset.w
+        o.tableD = preset.d
+        o.chairsPerTable = preset.seats
+      })
+    })
+  })
+
+  // Mixed-style table-preset dropdown: writes only tableW/tableD. Chairs per
+  // table is a separate input so the user can mix any density.
+  panel.querySelectorAll('[data-zone-mixed-table]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const preset = MIXED_TABLE_PRESETS.find(p => p.id === inp.value)
+      if (!preset) return
+      mutateProject(() => {
+        o.tableW = preset.w
+        o.tableD = preset.d
+      })
+    })
+  })
+
+  // Round-table size dropdown: writes diameter only. Chair count is its own
+  // input below, and crescent vs full is auto-derived from the chair count.
+  // Picking "Custom" triggers a re-render that exposes a Diameter input.
+  panel.querySelectorAll('[data-zone-round="size"]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const preset = ROUND_PRESETS.find(p => p.id === inp.value)
+      if (preset) {
+        mutateProject(() => { o.tableD = preset.d })
+      } else {
+        // "custom" — no immediate change; the diameter input shows on re-render.
+        mutateProject(() => { /* re-render to reveal the diameter input */ })
+      }
+    })
+  })
+
+  // Boolean checkboxes mapped to a single zone field (e.g., crescent).
+  panel.querySelectorAll('[data-zone-bool]').forEach(inp => {
+    const field = inp.dataset.zoneBool
+    inp.addEventListener('change', () => {
+      mutateProject(() => { o[field] = inp.checked })
+    })
+  })
+  panel.querySelectorAll('[data-zone-inches]').forEach(inp => {
+    const field = inp.dataset.zoneInches
+    const handler = () => {
+      const v = parseInches(inp.value)
+      if (v != null) update({ [field]: v })
+    }
+    inp.addEventListener('change', handler)
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { handler(); inp.blur() } })
+  })
+  // Cap-seats checkbox toggles preference between 'max' (no cap) and 'exact'
+  // (cap at the typed target). When the box is unchecked, target is irrelevant
+  // and the solver will pack as many seats as fit.
+  panel.querySelectorAll('[data-zone-cap]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      mutateProject(() => { o.preference = inp.checked ? 'exact' : 'max' })
+    })
+  })
+  panel.querySelectorAll('[data-zone-aisle]').forEach(inp => {
+    const field = inp.dataset.zoneAisle
+    inp.addEventListener('change', () => {
+      mutateProject(() => {
+        if (!o.aisles) o.aisles = { count: 1, width: 144 }
+        if (field === 'count') {
+          const n = parseInt(inp.value, 10)
+          if (Number.isFinite(n) && n >= 0) o.aisles.count = n
+        } else if (field === 'width') {
+          const v = parseInches(inp.value)
+          if (v != null) o.aisles.width = v
+        }
+        // Drop legacy field once user touches the new control.
+        delete o.centerAisle
+      })
+    })
+  })
+
+  const solveBtn = panel.querySelector('[data-action="solve"]')
+  if (solveBtn) solveBtn.addEventListener('click', () => {
+    // Sibling aisle objects in the active layout become real cuts the solver
+    // honors. Lets the user manually carve egress paths and watch chairs reflow.
+    const layout = activeLayout()
+    const room   = activeRoom()
+    const userAisles = (layout?.objects || [])
+      .filter(a => a.type === 'aisle' && a.kind === 'rect' && !a.hidden)
+    // Venue-level objects that physically block seating: obstructions
+    // (pillars), stages (chairs can't sit on the stage), and tech tables
+    // (back-of-house gear). Floors and walls are skipped — floors are just
+    // the area boundary; walls live outside the seated region.
+    const BLOCKING = new Set(['obstruction', 'stage', 'tech'])
+    const obstructions = (room?.objects || [])
+      .filter(o2 => BLOCKING.has(o2.type) && !o2.hidden)
+    const res = solveSeatingZone(o, { userAisles, obstructions })
+    mutateProject(() => {
+      o.result = res
+      // Mixed optimizer writes back the chosen split depth so the user sees
+      // it (and can fine-tune from there).
+      if (res.optimizedDepth != null) o.classroomDepth = res.optimizedDepth
+    })
+  })
+  const clearBtn = panel.querySelector('[data-action="clear-solve"]')
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    mutateProject(() => { o.result = null })
+  })
 }
 
 // Replace the multi-selection with a single merged polygon.

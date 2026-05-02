@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PlotTwist — chevron mockups (implemented behavior)</title>
+<style>
+  :root {
+    --bg:           #070910;
+    --bg-panel:     #0f131e;
+    --bg-elevated:  #161b27;
+    --border:       #2a2f3d;
+    --border-soft:  #1c2030;
+    --text:         #e8ebf3;
+    --text-dim:     #aab0c0;
+    --text-faint:   #6b7385;
+    --accent:       #FF2D9D;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  body { padding: 24px 32px 80px; }
+  h1 { margin: 0 0 6px; font-weight: 600; font-size: 22px; letter-spacing: -0.01em; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; max-width: 720px; line-height: 1.5; }
+  h2.section { margin: 24px 0 12px; font-size: 13px; font-weight: 600; color: var(--accent);
+               text-transform: uppercase; letter-spacing: 0.1em; }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .panel { background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: 10px; padding: 14px; }
+  .panel h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+  .panel .desc { font-size: 11.5px; color: var(--text-faint); margin-bottom: 10px; line-height: 1.5; min-height: 32px; }
+  svg.scene { background: #0a0d16; border: 1px dashed var(--border-soft); border-radius: 6px;
+              width: 100%; aspect-ratio: 1; display: block; }
+  .poly       { fill: none; stroke: #5a6378; stroke-width: 0.5; stroke-dasharray: 8 4; vector-effect: non-scaling-stroke; }
+  .stage      { fill: #2d5a8a; fill-opacity: 0.32; stroke: #5a8ec5; stroke-width: 0.4; vector-effect: non-scaling-stroke; }
+  .stage-lbl  { fill: #aab0c0; font: 10px ui-monospace, monospace; }
+  .aisle      { fill: #d4a72c; fill-opacity: 0.10; stroke: #d4a72c; stroke-width: 0.5;
+                stroke-dasharray: 4 3; stroke-opacity: 0.55; vector-effect: non-scaling-stroke; }
+  .table      { fill: #1a1f2e; stroke: #FF2D9D; stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+  .chair      { fill: #FF2D9D; fill-opacity: 0.32; stroke: #FF2D9D; stroke-width: 0.4; vector-effect: non-scaling-stroke; }
+  .chair-back { stroke: #FF2D9D; stroke-width: 1.6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+</style>
+</head>
+<body>
+
+<h1>Chevron mockups — implemented behavior</h1>
+<p class="sub">
+  These mirror what the solver actually produces: <b>section stays rectangular</b>, aisles stay straight, each chevron'd row is a CONTINUOUS angled line of items anchored at the aisle edge. Items that walk past the section's outer edge are dropped.
+</p>
+
+<h2 class="section">No horizontal aisle</h2>
+<div class="row">
+  <div class="panel"><h3>Theater</h3><div class="desc">15° chevron on outer sections. Each angled row anchors a chair flush at the aisle and walks outward.</div><svg class="scene" id="t1" viewBox="-540 -80 1080 760"></svg></div>
+  <div class="panel"><h3>Classroom</h3><div class="desc">Same chevron geometry; tables are the row units, chairs hang behind each table at the rotated offset.</div><svg class="scene" id="c1" viewBox="-540 -80 1080 760"></svg></div>
+  <div class="panel"><h3>Mixed</h3><div class="desc">Front classroom rows + 6' transition gap + theater rows behind. Chevron applies to both halves' outer sections.</div><svg class="scene" id="m1" viewBox="-540 -80 1080 760"></svg></div>
+</div>
+
+<h2 class="section">With horizontal aisle (mid-room)</h2>
+<div class="row">
+  <div class="panel"><h3>Theater + horz aisle</h3><div class="desc">Horizontal aisle splits the room front/back. Rows resume below the aisle, chevron continues on outer sections.</div><svg class="scene" id="t2" viewBox="-540 -80 1080 760"></svg></div>
+  <div class="panel"><h3>Classroom + horz aisle</h3><div class="desc">Same — classroom rows above and below the horizontal aisle, chevron'd on outers.</div><svg class="scene" id="c2" viewBox="-540 -80 1080 760"></svg></div>
+  <div class="panel"><h3>Mixed + horz aisle</h3><div class="desc">Horizontal aisle stacks within the theater half (after the classroom transition gap).</div><svg class="scene" id="m2" viewBox="-540 -80 1080 760"></svg></div>
+</div>
+
+<script>
+// ── Shared layout constants (inches) ──────────────────────────────────────
+const POLY_W = 1080, POLY_H = 720
+const POLY_X0 = -POLY_W / 2, POLY_X1 = POLY_W / 2
+const AISLE_COUNT = 2
+const AISLE_W = 144                            // 12'
+const SECTION_W = (POLY_W - AISLE_COUNT * AISLE_W) / (AISLE_COUNT + 1)   // ~264
+const CHEVRON_ANGLE = 15                       // degrees
+const CHAIR_W = 18, CHAIR_D = 20
+const TABLE_W = 96, TABLE_D = 18               // 8'×18" classroom default
+
+const STAGE_W = 480, STAGE_D = 60
+const HORZ_AISLE_W = 72                        // 6' horizontal aisle
+const HORZ_AISLE_Y = 320                       // mid-ish
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+const NS = 'http://www.w3.org/2000/svg'
+function el(tag, attrs = {}, parent = null, children = []) {
+  const e = document.createElementNS(NS, tag)
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v)
+  for (const c of children) e.appendChild(c)
+  if (parent) parent.appendChild(e)
+  return e
+}
+
+// Aisle ranges in local x.
+function aisleCenters() {
+  return [-(SECTION_W + AISLE_W) / 2, +(SECTION_W + AISLE_W) / 2]
+}
+
+// Compute span list (sectionIdx, x0, x1, justify).
+function spans() {
+  const cs = aisleCenters()
+  const aMin = cs.map(c => c - AISLE_W / 2)
+  const aMax = cs.map(c => c + AISLE_W / 2)
+  return [
+    { idx: 0, x0: POLY_X0, x1: aMin[0], justify: 'right' },   // left, packs right
+    { idx: 1, x0: aMax[0], x1: aMin[1], justify: 'center' },  // middle
+    { idx: 2, x0: aMax[1], x1: POLY_X1, justify: 'left'  },   // right, packs left
+  ]
+}
+
+// Add a chair (rect + back-stroke) into a parent group, rotated about its center.
+function chair(parent, cx, cy, rotDeg) {
+  const g = el('g', { transform: `translate(${cx} ${cy}) rotate(${rotDeg})` }, parent)
+  el('rect', { x: -CHAIR_W / 2, y: -CHAIR_D / 2, width: CHAIR_W, height: CHAIR_D, rx: 1.5, class: 'chair' }, g)
+  el('line', { x1: -CHAIR_W / 2, y1: CHAIR_D / 2, x2: CHAIR_W / 2, y2: CHAIR_D / 2, class: 'chair-back' }, g)
+}
+
+// Add a classroom table (with 3 chairs by default) rotated about its center.
+function classTable(parent, cx, cy, rotDeg, seats = 3) {
+  const g = el('g', { transform: `translate(${cx} ${cy}) rotate(${rotDeg})` }, parent)
+  el('rect', { x: -TABLE_W / 2, y: -TABLE_D / 2, width: TABLE_W, height: TABLE_D, rx: 2, class: 'table' }, g)
+  const cellW = TABLE_W / seats
+  const startX = -TABLE_W / 2 + cellW / 2
+  const offY   = (TABLE_D + CHAIR_D) / 2
+  for (let i = 0; i < seats; i++) {
+    const offX = startX + i * cellW
+    el('rect', { x: offX - CHAIR_W / 2, y: offY - CHAIR_D / 2, width: CHAIR_W, height: CHAIR_D, rx: 1.5, class: 'chair' }, g)
+    el('line', { x1: offX - CHAIR_W / 2, y1: offY + CHAIR_D / 2, x2: offX + CHAIR_W / 2, y2: offY + CHAIR_D / 2, class: 'chair-back' }, g)
+  }
+}
+
+// Render the venue chrome: polygon, stage, vertical aisles, optional horizontal aisle.
+function chrome(svg, withHorzAisle) {
+  el('rect', { class: 'poly', x: POLY_X0, y: 0, width: POLY_W, height: POLY_H }, svg)
+  el('rect', { class: 'stage', x: -STAGE_W / 2, y: -STAGE_D - 4, width: STAGE_W, height: STAGE_D }, svg)
+  el('text', { class: 'stage-lbl', x: 0, y: -STAGE_D / 2 - 4, 'text-anchor': 'middle', 'dominant-baseline': 'central' }, svg).textContent = 'STAGE'
+  for (const c of aisleCenters()) {
+    el('rect', { class: 'aisle', x: c - AISLE_W / 2, y: 30, width: AISLE_W, height: POLY_H - 30 }, svg)
+  }
+  if (withHorzAisle) {
+    el('rect', { class: 'aisle', x: POLY_X0, y: HORZ_AISLE_Y, width: POLY_W, height: HORZ_AISLE_W }, svg)
+  }
+}
+
+// Place theater rows in [yStart, yEnd]. Skips horizontal aisle if provided.
+function renderTheater(svg, withHorzAisle, yStart = 30, yEnd = POLY_H - 20) {
+  const ROW_H = 40                              // 1 chair-depth gap between rows
+  const SEAT_GAP = 0
+  const sps = spans()
+  let yTop = yStart
+  while (yTop + CHAIR_D <= yEnd) {
+    if (withHorzAisle && yTop + CHAIR_D > HORZ_AISLE_Y && yTop < HORZ_AISLE_Y + HORZ_AISLE_W) {
+      yTop = HORZ_AISLE_Y + HORZ_AISLE_W
+      continue
+    }
+    const yC = yTop + CHAIR_D / 2
+    for (const s of sps) {
+      const isOuter = s.idx === 0 || s.idx === sps.length - 1
+      const angle = isOuter ? (s.justify === 'right' ? +CHEVRON_ANGLE : -CHEVRON_ANGLE) : 0
+      const usable = s.x1 - s.x0
+      let count = Math.max(0, Math.floor((usable + SEAT_GAP) / (CHAIR_W + SEAT_GAP)))
+      count = Math.min(count, 12)
+      if (!count) continue
+      if (angle === 0) {
+        const blockW = count * CHAIR_W + (count - 1) * SEAT_GAP
+        let cur = s.justify === 'left'  ? s.x0
+                : s.justify === 'right' ? s.x1 - blockW
+                :                          s.x0 + (usable - blockW) / 2
+        for (let i = 0; i < count; i++) {
+          chair(svg, cur + CHAIR_W / 2, yC, 0)
+          cur += CHAIR_W + SEAT_GAP
+        }
+      } else {
+        const rad = angle * Math.PI / 180
+        const cs = Math.cos(rad), sn = Math.sin(rad)
+        const baseDirX = s.justify === 'right' ? -1 : +1
+        const dirX = baseDirX * cs, dirY = baseDirX * sn
+        const stepLen = CHAIR_W + SEAT_GAP
+        const ax = s.justify === 'right' ? s.x1 - CHAIR_W / 2 : s.x0 + CHAIR_W / 2
+        const halfChairY = (CHAIR_W / 2) * Math.abs(sn) + (CHAIR_D / 2) * Math.abs(cs)
+        for (let i = 0; i < count; i++) {
+          const cx = ax + i * stepLen * dirX
+          const cy = yC + i * stepLen * dirY
+          if (s.justify === 'right' && cx - CHAIR_W / 2 < s.x0) break
+          if (s.justify === 'left'  && cx + CHAIR_W / 2 > s.x1) break
+          // Horizontal aisle collision check.
+          if (withHorzAisle && cy + halfChairY > HORZ_AISLE_Y && cy - halfChairY < HORZ_AISLE_Y + HORZ_AISLE_W) break
+          chair(svg, cx, cy, angle)
+        }
+      }
+    }
+    yTop += ROW_H
+  }
+}
+
+function renderClassroom(svg, withHorzAisle, yStart = 30, yEnd = POLY_H - 20) {
+  const ROW_H = 54                              // 4'-6" pitch
+  const TABLE_GAP = 0
+  const sps = spans()
+  let yTop = yStart
+  while (yTop + TABLE_D + CHAIR_D <= yEnd) {
+    if (withHorzAisle && yTop + TABLE_D + CHAIR_D > HORZ_AISLE_Y && yTop < HORZ_AISLE_Y + HORZ_AISLE_W) {
+      yTop = HORZ_AISLE_Y + HORZ_AISLE_W
+      continue
+    }
+    const tableCenterY = yTop + TABLE_D / 2
+    for (const s of sps) {
+      const isOuter = s.idx === 0 || s.idx === sps.length - 1
+      const angle = isOuter ? (s.justify === 'right' ? +CHEVRON_ANGLE : -CHEVRON_ANGLE) : 0
+      const usable = s.x1 - s.x0
+      let count = Math.max(0, Math.floor((usable + TABLE_GAP) / (TABLE_W + TABLE_GAP)))
+      // Section cap @ 24'
+      const SECTION_CAP = Math.max(1, Math.floor((24 * 12 + TABLE_GAP) / (TABLE_W + TABLE_GAP)))
+      count = Math.min(count, SECTION_CAP)
+      if (!count) continue
+      if (angle === 0) {
+        const blockW = count * TABLE_W + (count - 1) * TABLE_GAP
+        let cur = s.justify === 'left'  ? s.x0
+                : s.justify === 'right' ? s.x1 - blockW
+                :                          s.x0 + (usable - blockW) / 2
+        for (let i = 0; i < count; i++) {
+          classTable(svg, cur + TABLE_W / 2, tableCenterY, 0)
+          cur += TABLE_W + TABLE_GAP
+        }
+      } else {
+        const rad = angle * Math.PI / 180
+        const cs = Math.cos(rad), sn = Math.sin(rad)
+        const baseDirX = s.justify === 'right' ? -1 : +1
+        const dirX = baseDirX * cs, dirY = baseDirX * sn
+        const stepLen = TABLE_W + TABLE_GAP
+        const ax = s.justify === 'right' ? s.x1 - TABLE_W / 2 : s.x0 + TABLE_W / 2
+        const halfTabAbove  = (TABLE_W / 2) * Math.abs(sn) + (TABLE_D / 2) * Math.abs(cs)
+        const chairExtremeY = (TABLE_W / 2) * Math.abs(sn) + (TABLE_D / 2 + CHAIR_D) * Math.abs(cs) + CHAIR_D / 2
+        for (let i = 0; i < count; i++) {
+          const tx = ax + i * stepLen * dirX
+          const ty = tableCenterY + i * stepLen * dirY
+          if (s.justify === 'right' && tx - TABLE_W / 2 < s.x0) break
+          if (s.justify === 'left'  && tx + TABLE_W / 2 > s.x1) break
+          // Horizontal aisle collision check.
+          if (withHorzAisle && ty + chairExtremeY > HORZ_AISLE_Y && ty - halfTabAbove < HORZ_AISLE_Y + HORZ_AISLE_W) break
+          classTable(svg, tx, ty, angle)
+        }
+      }
+    }
+    yTop += ROW_H
+  }
+}
+
+function renderMixed(svg, withHorzAisle) {
+  // 50/50 split (minus 6' transition gap), classroom front, theater back.
+  const transitionGap = 72
+  const half = (POLY_H - 30 - 20 - transitionGap) / 2
+  const classroomEnd = 30 + half
+  const theaterStart = classroomEnd + transitionGap
+  renderClassroom(svg, false, 30, classroomEnd)
+  // Indicate the transition gap visually
+  el('rect', { class: 'aisle', x: POLY_X0, y: classroomEnd, width: POLY_W, height: transitionGap }, svg)
+  if (withHorzAisle) {
+    // Horizontal aisle inside the theater half only (classroom portion already
+    // above the transition gap).
+    renderTheater(svg, true, theaterStart, POLY_H - 20)
+  } else {
+    renderTheater(svg, false, theaterStart, POLY_H - 20)
+  }
+}
+
+// ── Wire the panels ──────────────────────────────────────────────────────
+const t1 = document.getElementById('t1'); chrome(t1, false); renderTheater(t1, false)
+const c1 = document.getElementById('c1'); chrome(c1, false); renderClassroom(c1, false)
+const m1 = document.getElementById('m1'); chrome(m1, false); renderMixed(m1, false)
+const t2 = document.getElementById('t2'); chrome(t2, true);  renderTheater(t2, true)
+const c2 = document.getElementById('c2'); chrome(c2, true);  renderClassroom(c2, true)
+const m2 = document.getElementById('m2'); chrome(m2, true);  renderMixed(m2, true)
+</script>
+
+</body>
+</html>

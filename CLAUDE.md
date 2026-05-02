@@ -258,6 +258,20 @@ connect-src 'self' data: blob:;
 
 **Render order vs. layer-panel order.** The internal `room.objects[]` is bottom-of-stack first (last in array renders on top, painting over earlier ones). The Photoshop-convention layers panel reads top-down, so the panel reverses the array on render. Drag-reorder math has to translate visual above/below into array index moves — easy to get backwards.
 
+**Solver dispatch via `solver/index.js`.** Each style (`theater`, `classroom`, `rounds`, `mixed`) is a separate file under `renderer/solver/`. The dispatcher routes by `zone.style` and forwards `opts` (which carries user-drawn aisles, venue obstructions, optional y-bounds for the mixed solver). Shared scan-line helpers live in `solver/geom.js`: `intoLocalFrame` / `worldToLocal` / `localToWorld` (rotation transforms around zone centroid), `horizontalSpans` (polygon ↔ horizontal line intersections), `subtractRanges` + `subtractObstructions` (cut aisle / obstruction ranges out of a span list, tagging with `justify` for flush-edge layout), `computeAislePositions` / `computeShiftedRoundAislePositions` (auto-aisle placement), `pointInPolygon` / `itemTouchesAny` / `obstructionToWorldPolygon` / `placedItemCorners` (post-place collision), `fitUnits` (greedy chair/table fit with min spacing).
+
+**Goal-not-cap solver semantics.** When a zone has `preference: 'exact'` and a `target` seat count, the solver fills full rows and stops once `totalSeats >= target` (one row of "spill" above target is acceptable). Mixed runs in optimizer mode: iterates classroom row counts, picks the depth whose total lands closest to target (over or under), and writes `optimizedDepth` back to the zone so the user sees what was chosen. The Object Info panel labels this **Goal**, not **Cap**.
+
+**Aisle math conventions.** Auto-aisles compute centerline positions via `computeAislePositions(count, aisleW, sectionW)` where `sectionW` is style-dependent (theater: `maxPerRow × chairW`; classroom: 24'×12 fire-code cap, but capped to theater-aligned width when called from mixed; rounds with `fixedAisles=true`: polygon evenly subdivided; rounds with `fixedAisles=false`: tight blocks flush against shifted aisles). User-drawn aisles get classified by their LOCAL-frame aspect ratio: wider-than-tall → horizontal aisle (row stepper jumps past in y), taller-than-wide → vertical aisle (per-row x-cut alongside the auto aisles).
+
+**Obstruction filter is a post-process.** Solvers place chairs/tables ignoring obstructions, then `itemTouchesAny` corner-tests each placed seat (and each table) against `obstructionToWorldPolygon`-ified `BLOCKING` venue objects (`obstruction`, `stage`, `tech`). For classroom, the table + its chairs are an atomic unit — if any chair corner OR the table itself touches an obstruction, the whole unit drops. Stage / tech objects are blocking by default (chairs can't sit on the stage).
+
+**Settings module (`settings.js`).** Single localStorage namespace `plottwist:settings:*`. Defaults live in `SETTINGS_DEFAULTS`; `getSetting(k)` falls through to default if no override. Subscribers (`onSettingsChange`) re-render dependent UI live (canvas grid, snap behavior, etc.). The Settings modal (`ui/settingsModal.js`) opens via Cmd+, with three tabs — Workspace (origin, centerline, grid, snap), Defaults (nudge, solver pre-fills, auto-save, undo depth), Updates (version + GitHub release check). Cmd+Shift+R relaunches via `app.relaunch() + app.exit(0)` (TEMP dev-only, marked for removal pre-ship).
+
+**Snap engine (`snapEngine.js`).** During a `move` drag (only — vertex/resize don't snap yet), every visible / unlocked object's anchors (corners + edge midpoints + center, plus seating-zone solver chair/table centers) are tested against the dragged object's anchors at the proposed offset. Within tolerance (`snapTolerance` setting, default 8 px), the drag offset is adjusted so the closest pair coincides. Edge snap (perpendicular foot of any rect/polygon/dim line edge) is added for the Dim tool's two clicks via `snapPointToAnchors()`. Shift-locked drags skip snap.
+
+**Undo / redo (`state.js`).** Each `mutateProject()` call pushes a `structuredClone(state.project)` snapshot to `state.undoStack` (limit reads from `getSetting('undoDepth')`, default 80). `beginTransaction()` / `endTransaction()` batches drag mutations so a whole gesture is one undo step. Cmd+Z / Cmd+Shift+Z. History is wiped on file open / new project.
+
 ---
 
 ## Repo
@@ -271,43 +285,71 @@ connect-src 'self' data: blob:;
 ```
 PlotTwist/
 ├── package.json
-├── main.js                    # Electron main, IPC, window, menus
-├── preload.js                 # contextBridge → window.plottwist
+├── main.js                       # Electron main, IPC, window, menus (Settings… ⌘,, TEMP "Restart App" ⌘⇧R)
+├── preload.js                    # contextBridge → window.plottwist (incl. openExternal, getAppVersion)
 ├── scripts/
-│   └── copy-vendor.js         # postinstall: vendor pdfjs + polygon-clipping
+│   └── copy-vendor.js            # postinstall: vendor pdfjs + polygon-clipping
 ├── renderer/
-│   ├── index.html             # CSP, vendor script tag, app.js entry
-│   ├── styles.css             # navy + magenta chrome, layers panel, calibration banner
-│   ├── app.js                 # entry: keyboard, file menu, image import, shape clipboard
-│   ├── state.js               # pub-sub state, project model, type styles, reorder/name helpers
-│   ├── geom.js                # bounds, area, hit-test, segment distance, 45° snap
-│   ├── units.js               # parseInches / formatInches / formatSqFt
-│   ├── canvas.js              # SVG scene, pan/zoom, calibration, midpoint handles
-│   ├── shapeOps.js            # polygon-clipping wrapper (union; subtract/intersect later)
-│   ├── imageImport.js         # PNG/JPG/PDF → data URL (lazy pdfjs)
+│   ├── index.html                # CSP, sidebar+layers split, vendor script tag, app.js entry
+│   ├── styles.css                # navy + magenta chrome, settings modal, pick-mode + update banners
+│   ├── app.js                    # entry: keyboard (incl. ⌘Z, arrow nudge, ⌘,), file menu, image import,
+│   │                             #   shape clipboard, pick-mode banner, auto-save, launch update check
+│   ├── state.js                  # pub-sub state, undo/redo + transactions, project model, type styles
+│   ├── settings.js               # localStorage-backed settings (defaults + listeners)
+│   ├── updater.js                # GitHub releases check + semver compare
+│   ├── snapEngine.js             # anchor + edge snap, getSnapPoints / collectSnapAnchors / snapPointToAnchors
+│   ├── geom.js                   # bounds, area, hit-test (incl. dim), distToSegment, axis snap
+│   ├── units.js                  # parseInches / formatInches / formatSqFt
+│   ├── canvas.js                 # SVG scene, pan/zoom, calibration, snap indicator, origin + centerline
+│   │                             #   guides, auto-aisle preview, table/chair/dim render, pick-mode handlers
+│   ├── shapeOps.js               # polygon-clipping wrapper (union; subtract/intersect later)
+│   ├── imageImport.js            # PNG/JPG/PDF → data URL (lazy pdfjs)
+│   ├── solver/
+│   │   ├── index.js              # solveSeatingZone(zone, opts) dispatcher
+│   │   ├── geom.js               # intoLocalFrame, horizontalSpans, subtractRanges/Obstructions,
+│   │   │                         #   computeAislePositions / computeShiftedRoundAislePositions,
+│   │   │                         #   pointInPolygon, itemTouchesAny, fitUnits, etc.
+│   │   ├── theaterSolver.js      # row-scan, in-line chevron placement
+│   │   ├── classroomSolver.js    # table-aware row-scan, in-line chevron, atomic table-unit obstruction filter
+│   │   ├── roundsSolver.js       # grid/hex (offset rows) placement, fixed-aisles vs shift-mode aisles
+│   │   └── mixedSolver.js        # front classroom + transition gap + back theater, with optimizer
 │   ├── tools/
-│   │   ├── rectTool.js
-│   │   ├── polygonTool.js
-│   │   ├── selectTool.js
+│   │   ├── rectTool.js           # rect drag for floor / aisle / obstr / stage / tech / SEATING (4-vertex poly)
+│   │   ├── polygonTool.js        # walls polygon, STYLE_DEFAULTS, TABLE_PRESETS / ROUND_PRESETS / MIXED_TABLE_PRESETS
+│   │   ├── dimTool.js            # drag-to-place dim line, snaps both endpoints
+│   │   ├── selectTool.js         # move/resize/vertex drags, shift-axis-lock, translates seating result with zone
 │   │   └── imageTool.js
 │   ├── ui/
-│   │   ├── toolbar.js
-│   │   ├── projectSidebar.js
-│   │   ├── objectList.js      # Photoshop-style layers panel
-│   │   ├── objectInfo.js
-│   │   └── icons.js           # inline SVG icons (eye / lock)
-│   └── vendor/                # gitignored; populated by `npm install`
+│   │   ├── toolbar.js            # VENUE / LAYOUT tool groups
+│   │   ├── projectSidebar.js     # rooms + nested layouts hierarchy w/ eye + lock per layout
+│   │   ├── objectList.js         # Photoshop-style layers panel, split into Venue / Layout sections
+│   │   ├── objectInfo.js         # right pane — per-style seating UI, dim length+angle inputs, origin-relative X/Y
+│   │   ├── settingsModal.js      # ⌘, modal — 3 tabs: Workspace / Defaults / Updates
+│   │   └── icons.js              # inline SVG icons (eye / lock)
+│   └── vendor/                   # gitignored; populated by `npm install`
 │       ├── pdfjs/
 │       └── polygon-clipping/
+├── mockups/                      # standalone HTML mockups for design conversations
+│   ├── seating-styles.html       # table & chair render-style options
+│   ├── chevron-interpretations.html  # rotation-pivot exploration
+│   └── chevron-mockups.html      # implemented behavior preview (theater / classroom / mixed × ± horz aisle)
 ├── data/
-│   └── fireCode.json          # placeholder {} — populate during fire-code step
-├── build/                     # icons, dmg-bg (TBD)
-├── .github/workflows/         # release.yml — TBD
+│   └── fireCode.json             # placeholder {} — populate during fire-code step
+├── build/                        # icons, dmg-bg (TBD)
+├── .github/workflows/            # release.yml — TBD
 ├── .gitignore
 └── CLAUDE.md
 ```
 
-**`.ptwist` project file** is JSON: `{ version, rooms: [{ id, name, objects: [...] }] }`. Each object has `id`, `kind` (rect / polygon / image), `type` (floor / aisle / obstruction / stage / tech / walls / underlay), plus geometry and the optional `name`, `hidden`, `locked`, `fill`, `fillOpacity`, `stroke`, `strokeWidth`, `opacity` overrides. Underlay images are base64-embedded.
+**`.ptwist` project file** is JSON:
+```
+{ version,
+  rooms: [{ id, name, objects: [...], layouts: [{ id, name, hidden, locked, objects: [...] }, ...] }, ...],
+  origin:     { x, y },                                    // displayed-coords origin (Settings → Workspace)
+  centerline: { enabled, x, color, thickness } }            // optional vertical guide
+```
+
+Object `kind`: `rect` / `polygon` / `image` / `dim`. Object `type`: `floor` / `aisle` / `obstruction` / `stage` / `tech` / `walls` / `underlay` / `dim` / `seating`. Seating polygons carry their solver config (`style`, `pattern`, `rotation`, `target`, `preference`, `aisles`, `fixedAisles`, `offsetRows`, `chevron` / `chevronAngle`, `transitionGap` for mixed, etc.) and a cached `result: { rows, seats, tables, totalSeats, warnings, optimizedDepth? }`. Common overrides: `name`, `hidden`, `locked`, `fill`, `fillOpacity`, `stroke`, `strokeWidth`, `opacity`. Underlay images are base64-embedded.
 
 ---
 
@@ -320,7 +362,7 @@ Don't build ahead. Each step ships before the next starts.
 1. ✅ **Scaffold** — Electron skeleton, navy + magenta chrome, footer, console-forwarding in dev.
 2. ✅ **Room construction** — rectangle tool for floor/aisle/obstruction/stage/tech, walls polygon tool with shift-snap (0/45/90°), corner + mid-edge handles, right-click vertex insert/delete, ⌘6 fit, multi-room sidebar with new/rename/delete.
 3. ✅ **Object types + Object Info** — full toolbar, fill/stroke/opacity per object, name field, area + bounds + per-vertex coords, live W/H/X/Y inputs (parse `24'`, `24'-6"`, `36"`, bare inches).
-4. ⚠ **Project model** — `.ptwist` save/load shipped. **Layouts-within-rooms is NOT yet built**: rooms own objects directly; the spec wants rooms to share geometry across multiple layouts (Theater 220, Mixed 175, etc.). Wire that nesting before the solver lands so seating zones can swap without touching room geometry.
+4. ✅ **Project model** — `.ptwist` save/load shipped. Layouts-within-rooms wired: each room carries `layouts[]`, sidebar shows them with independent eye/lock, active layout renders at full opacity while other visible layouts dim to 35%. Structural objects (floor, walls, obstruction, stage, tech, underlay) stay in `room.objects`; solver-generated objects (seating zones, aisles) will live in `layout.objects`.
 
 ### Pulled forward from v2
 
@@ -333,16 +375,29 @@ Don't build ahead. Each step ships before the next starts.
 
 ### Next up (priority order)
 
-5. ◻ **Layouts within rooms** — nest each room's seating layouts under `Layouts[]` per the original spec; sidebar reflects "room → layouts" hierarchy. Lands BEFORE the theater solver so it has a place to live.
-6. ◻ **Theater solver** — single-style, scan-line fit into a zone polygon with fire-code-aware spacing. 12-per-row default, 20" front-to-front, 12'/6' aisle.
-7. ◻ **Classroom solver** — single-style, table-aware (6'×18", 6'×30", 8'×18", 8'×30").
-8. ◻ **Rounds solver** — full + crescent (60", 72").
-9. ◻ **Mixed solver** — theater + classroom in one zone, optimize for `max classroom` / `max theater` / `exact count`.
-10. ◻ **Fire code engine** — load jurisdictions from `data/fireCode.json` (Cook, Clark, Buena Vista, Reidy Creek), validate live, render magenta callouts on violations.
-11. ◻ **Export** — PNG (raster) + PDF (vector via `pdf-lib`) with annotation overlay.
-12. ◻ **Boolean Subtract / Intersect** — same UI pattern as Join, separate buttons in the multi-select Object Info panel.
-13. ◻ **CI / release** — GitHub Actions per FlowCast pattern: Mac arm64 + Windows x64, ad-hoc Mac signing, draft promotion via `gh release edit … --draft=false --latest`.
-14. ◻ **Diagnostics tab** — preflight check, log tail, auto-updater UI.
+5. ✅ **Layouts within rooms** — each room has `layouts[]`; sidebar shows room → layouts hierarchy with eye/lock per layout; active layout renders full, others dimmed; old .ptwist files auto-migrate with a default Layout 1.
+6. ✅ **Theater solver (v1)** — Seating polygon tool (S key) drops a zone into the active layout. Object Info panel exposes style / pattern / facing (rotation) / Goal seat count / row spacing / max-per-row / aisle count + width. Solver scans rows in the zone's facing-up frame, intersects each row strip with the polygon, subtracts auto + user-drawn aisles, and lays 18×20 chairs flush against aisle edges. Toolbar split into VENUE and LAYOUT groups; layers panel split into the same two sections.
+7. ✅ **Classroom solver** — table-aware. Object Info enables Classroom in the Style dropdown and shows a table-preset picker (6'×18", 8'×18", 6'×30", 8'×30") plus chairs/table. Solver fits tables along each row with chairs on the audience-facing edge, evenly distributed across the table width; row pitch defaults to 4'-6". Style dispatch refactored: `solver/index.js` routes by `zone.style`, with `theaterSolver.js` / `classroomSolver.js` plugging in. Shared scan-line helpers extracted to `solver/geom.js`. Result shape extended with `tables[]`. Switching styles auto-applies that style's defaults from `STYLE_DEFAULTS` (overridable via Settings → Defaults). Section width capped at 24' for fire-code.
+8. ✅ **Rounds solver** — 60" / 72" / Custom diameter, configurable chair count (≤ 6 auto-renders crescent, ≥ 7 renders full circle), 5' default edge-to-edge spacing. **Fixed aisles** toggle: ON (default) distributes tables evenly across each section with even-with-min-spacing gaps; OFF runs SHIFT mode — tables tightly packed, aisles flush to blocks, slack pools at polygon outer edges (helper in `solver/geom.js#computeShiftedRoundAislePositions`). **Offset rows** toggle does proper hex packing (alternate rows shifted by half-pitch, row pitch shrinks to `pitch × √3/2` so diagonal table-center distance equals horizontal pitch). Outer chair-footprint circle drawn at `tableR + chairD` for collision visualization.
+9. ✅ **Mixed solver** — front classroom + 6' transition gap + back theater. Tap **Mixed** in the dropdown → 50/50 split is seeded from polygon height. **Goal** seat count + Solve runs the optimizer (iterates classroom row counts, picks depth closest to target — over or under is fine). Result warnings include the chosen depth + ±1 row neighbor counts so the user can fine-tune. Inner classroom solve gets `sectionWCap` pinned to theater section width so 6' tables come out 3-per-section to match the 12 theater chairs above. Default classroom table is 6'×18" with 2 seats; only 6×18 / 8×18 / 6×30 are exposed in mixed (no 8×30, depth-greedy).
+10. ✅ **Aisle objects + obstruction filter** — Aisle tool drops a real rect-kind aisle object in the active layout; solver respects user-drawn aisles alongside auto-placed ones (vertical aisles cut x-spans, horizontal aisles cause row-skipping in y). Stage / obstruction / tech are blocking — chairs that overlap (corner test) get dropped from the solve; classroom drops the whole table+chairs unit atomically. Width labels with arrow callouts on every aisle (always horizontal text, ⊥ arrows on the long axis).
+11. ✅ **Chevron seating** — outer-section chevron for theater / classroom / mixed (NOT rounds — rounds get offsetRows instead). Each chevron'd row is a CONTINUOUS angled line of items anchored flush at the inner aisle edge, walking outward at `chevronAngle°` (default 15°, range −45..+45). Section stays rectangular, aisle stays straight; items that walk past the section's outer x-edge or into a horizontal aisle are dropped per-item. Positive angle slants outer end TOWARD the stage (default); negative reverses. Logic lives IN the placement loops (theaterSolver / classroomSolver), not as a post-process.
+12. ✅ **Settings panel** — ⌘, opens the modal. **Workspace** tab: origin (with "Pick on canvas" mode), centerline (color, thickness, X position, "Pick on canvas" mode), grid (show + spacing), snap (enable + tolerance px). **Defaults** tab: nudge small / large, theater row pitch, classroom row pitch, aisle width, mixed transition gap, round table size / chair count / spacing, auto-save interval, undo history depth. **Updates** tab: current version, "Check now" button (fetches `api.github.com/repos/Horton619/plottwist/releases/latest`, opens via `shell.openExternal`), auto-check on launch toggle. Object Info displays X/Y inputs as origin-relative.
+13. ✅ **Snap + nudge** — `snapEngine.js`: anchor snap (corners + edge midpoints + centers + chair / table centers from solver results) AND edge snap (perpendicular foot of any rect / polygon / dim segment) within `snapTolerance` px during a `move` drag and during dim-line drawing. Cyan ring + crosshair indicator. Shift-locked drags skip snap. Arrow-key nudge moves selected objects by `nudgeSmall` (default 1') / shift+arrow `nudgeLarge` (6'); each press is one undo step.
+14. ✅ **Undo / redo** — Cmd+Z / Cmd+Shift+Z. Drags are wrapped in transactions so each gesture is one history step. Limit configurable via Settings. Cleared on file new / open. Selection / active room / viewport are NOT in undo (those use `setState`, only `mutateProject` snapshots).
+15. ✅ **Auto-save + auto-update-check** — autoSaveInterval setting (off / 1 / 5 / 15 min). Re-arms on settings change. Skips Untitled projects. Auto-check fires 2 s after launch when enabled; dismissable banner if a newer release is published.
+16. ✅ **Dim tool** — `D` key. Drag from start to end → teal dashed measurement line with end ticks + length label. Both endpoints snap (incl. edge snap to walls / polygon edges / chair-table centers). Object Info exposes Length AND Angle as editable inputs that pivot the END around the START.
+
+### Open queue
+
+17. ◻ **Fire code engine** — load jurisdictions from `data/fireCode.json` (Cook, Clark, Buena Vista, Reidy Creek), validate live, render magenta callouts on violations.
+18. ◻ **Export** — PNG (raster) + PDF (vector via `pdf-lib`) with annotation overlay.
+19. ◻ **Boolean Subtract / Intersect** — same UI pattern as Join, separate buttons in the multi-select Object Info panel.
+20. ◻ **CI / release** — GitHub Actions per FlowCast pattern: Mac arm64 + Windows x64, ad-hoc Mac signing, draft promotion via `gh release edit … --draft=false --latest`.
+21. ◻ **Diagnostics tab** — preflight check, log tail, auto-updater UI.
+22. ◻ **Vertex / resize drag snapping** — snap engine currently handles `move` only; vertex and resize drags don't snap yet. Plumb the same `getSnapPoints` lookup into both other drag modes.
+23. ◻ **Draggable aisle dim labels** — TODO comment in `canvas.js#buildAisleDimCallout`. Click + drag the callout along the aisle's long axis; persist the position fraction on the aisle object.
+24. ◻ **Strip TEMP "Restart App" menu** before shipping (View → Restart App, ⌘⇧R, marked TEMP in `main.js`).
 
 ### Backlog / nice-to-have
 
@@ -350,3 +405,8 @@ Don't build ahead. Each step ships before the next starts.
 - Calibration on per-image basis with a stored `pxPerInch` so the underlay can be re-rendered at known scales.
 - Multi-image batch calibration — currently each new import clobbers the previous calibration session.
 - Underlay sidecar storage to keep `.ptwist` files small.
+- Per-room origin / centerline (currently project-level — fine for one-venue projects, less so for multi-venue).
+- Auto-optimize Mixed beyond goal-target (max classroom / max theater modes).
+- Seat / row numbering in the rendered output.
+- Hex packing for theater / classroom (currently rounds only).
+- Curved (fan) row pattern for theater — chairs face a focal point instead of sharing one rotation.

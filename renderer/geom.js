@@ -15,7 +15,7 @@ export function polygonArea(verts) {
 export function objectArea(o) {
   if (o.kind === 'rect' || o.kind === 'image') return rectArea(o)
   if (o.kind === 'polygon') return polygonArea(o.vertices)
-  return 0
+  return 0    // dim lines have no area
 }
 
 export function objectBounds(o) {
@@ -29,6 +29,11 @@ export function objectBounds(o) {
       if (x < minX) minX = x; if (x > maxX) maxX = x
       if (y < minY) minY = y; if (y > maxY) maxY = y
     }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+  }
+  if (o.kind === 'dim') {
+    const minX = Math.min(o.x1, o.x2), maxX = Math.max(o.x1, o.x2)
+    const minY = Math.min(o.y1, o.y2), maxY = Math.max(o.y1, o.y2)
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
   }
   return { x: 0, y: 0, w: 0, h: 0 }
@@ -80,11 +85,14 @@ export function pointInRect(px, py, r) {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h
 }
 
-export function hitTest(o, px, py) {
+export function hitTest(o, px, py, tol = 6) {
   if (o.kind === 'rect' || o.kind === 'image') return pointInRect(px, py, o)
   if (o.kind === 'polygon') {
     if (o.vertices.length < 3) return false
     return pointInPolygon(px, py, o.vertices)
+  }
+  if (o.kind === 'dim') {
+    return distToSegment([px, py], [o.x1, o.y1], [o.x2, o.y2]) <= tol
   }
   return false
 }

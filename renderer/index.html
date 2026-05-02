@@ -16,14 +16,17 @@
   </header>
 
   <div class="app-grid">
-    <aside id="sidebar" class="pane sidebar-pane"></aside>
+    <aside class="pane sidebar-pane">
+      <div id="sidebar" class="sidebar-host"></div>
+      <div class="left-split"></div>
+      <div id="layers" class="layers-host"></div>
+    </aside>
     <section class="canvas-column">
       <div id="toolbar" class="pane toolbar-pane"></div>
       <div id="canvas"  class="pane canvas-pane"></div>
     </section>
     <aside class="pane right-pane">
-      <div id="layers" class="layers-host"></div>
-      <div id="info"   class="info-host"></div>
+      <div id="info" class="info-host"></div>
     </aside>
   </div>
 

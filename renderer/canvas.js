@@ -2,12 +2,16 @@
 // World units = inches. The SVG viewBox itself is expressed in inches so the
 // math is simple — pan = shift viewBox origin, zoom = scale viewBox dimensions.
 
-import { state, setState, subscribe, mutateProject, activeRoom, selectedObjects, styleFor, uid } from './state.js'
+import { state, setState, subscribe, mutateProject, activeRoom, activeLayout, selectedObjects, styleFor, uid, beginTransaction, endTransaction } from './state.js'
 import { objectBounds, unionBounds, hitTest, distToSegment, snapToAxis } from './geom.js'
 import { formatInches, parseInches } from './units.js'
 import { startRectDraw,    updateRectDraw,    endRectDraw }    from './tools/rectTool.js'
 import { startPolygonDraw, addPolygonVertex,  cancelPolygonDraw, finishPolygonDraw } from './tools/polygonTool.js'
 import { startSelectDrag,  updateSelectDrag,  endSelectDrag }  from './tools/selectTool.js'
+import { startDimDraw,     updateDimDraw,     endDimDraw }     from './tools/dimTool.js'
+import { computeAislePositions, computeShiftedRoundAislePositions } from './solver/geom.js'
+import { getSetting, onSettingsChange } from './settings.js'
+import { computeMoveSnap }       from './snapEngine.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -56,6 +60,7 @@ export function initCanvas(container) {
   window.addEventListener('keyup',    onSpaceUp)
 
   subscribe(render)
+  onSettingsChange(render)   // grid/snap/etc. updates trigger an immediate re-render
   render()
 }
 
@@ -115,7 +120,9 @@ function zoomAt(clientX, clientY, factor) {
 
 export function fitToContent() {
   const room = activeRoom()
-  const objs = room ? room.objects : []
+  const roomObjs = room ? room.objects : []
+  const layoutObjs = (room?.layouts || []).flatMap(l => l.objects)
+  const objs = [...roomObjs, ...layoutObjs]
   let bounds = unionBounds(objs, 60)
   if (!bounds) {
     // Empty room — fit a 100ft × 70ft region centered on origin.
@@ -166,11 +173,32 @@ function onPointerDown(e) {
     return
   }
 
+  // Origin / centerline pick modes — set the chosen project field, exit mode.
+  if (state.pickMode === 'origin') {
+    mutateProject(p => {
+      if (!p.origin) p.origin = { x: 0, y: 0 }
+      p.origin.x = Math.round(w.x)
+      p.origin.y = Math.round(w.y)
+    })
+    setState({ pickMode: null })
+    return
+  }
+  if (state.pickMode === 'centerline') {
+    mutateProject(p => {
+      if (!p.centerline) p.centerline = { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 }
+      p.centerline.enabled = true
+      p.centerline.x = Math.round(w.x)
+    })
+    setState({ pickMode: null })
+    return
+  }
+
   // Tool dispatch
   if (state.activeTool === 'select') {
     // Hit handles first, then objects.
     const handle = e.target.closest('[data-handle]')
     if (handle) {
+      beginTransaction()
       drag = startSelectDrag('resize', { handle: handle.dataset.handle, start: w })
       svg.setPointerCapture(e.pointerId)
       return
@@ -181,12 +209,17 @@ function onPointerDown(e) {
     if (midHandle) {
       const oid = midHandle.dataset.objectId
       const edgeIdx = parseInt(midHandle.dataset.midEdge, 10)
+      const layout = activeLayout()
       const obj = room.objects.find(o => o.id === oid)
+        || (layout ? layout.objects.find(o => o.id === oid) : null)
       if (obj && obj.kind === 'polygon') {
         const a = obj.vertices[edgeIdx]
         const b = obj.vertices[(edgeIdx + 1) % obj.vertices.length]
         const mid = [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)]
         const insertAt = edgeIdx + 1
+        // Transaction wraps both the vertex insert AND the subsequent drag —
+        // one undo step rolls back the inserted vertex and any motion.
+        beginTransaction()
         mutateProject(() => { obj.vertices.splice(insertAt, 0, mid) })
         drag = startSelectDrag('vertex', {
           objectId:  oid,
@@ -199,6 +232,7 @@ function onPointerDown(e) {
     }
     const vertex = e.target.closest('[data-vertex]')
     if (vertex) {
+      beginTransaction()
       drag = startSelectDrag('vertex', {
         objectId: vertex.dataset.objectId,
         vertexIdx: parseInt(vertex.dataset.vertex, 10),
@@ -207,7 +241,12 @@ function onPointerDown(e) {
       svg.setPointerCapture(e.pointerId)
       return
     }
-    const hit = hitTopMost(w.x, w.y, room.objects)
+    // Hit-test against active layout first (visually on top), then venue.
+    const layout = activeLayout()
+    const layoutHit = layout && !layout.hidden && !layout.locked
+      ? hitTopMost(w.x, w.y, layout.objects)
+      : null
+    const hit = layoutHit || hitTopMost(w.x, w.y, room.objects)
     if (hit) {
       const additive = e.shiftKey
       let sel = state.selection.slice()
@@ -218,6 +257,7 @@ function onPointerDown(e) {
         sel = [hit.id]
       }
       setState({ selection: sel, tabEdit: null })
+      beginTransaction()
       drag = startSelectDrag('move', { start: w })
       svg.setPointerCapture(e.pointerId)
     } else {
@@ -226,6 +266,7 @@ function onPointerDown(e) {
     return
   }
 
+  // Walls is the only polygon tool — seating now defaults to rect drawing.
   if (state.activeTool === 'walls') {
     if (!state.drawingPolygon) {
       startPolygonDraw([Math.round(w.x), Math.round(w.y)])
@@ -237,8 +278,18 @@ function onPointerDown(e) {
     return
   }
 
-  // All other rectangle-based tools
-  const rectTypes = ['floor', 'aisle', 'obstruction', 'stage', 'tech']
+  // Dim line tool — drag two-point measurement. Endpoints snap to nearby
+  // anchors (corners / midpoints / chairs / tables / etc.) within tolerance.
+  if (state.activeTool === 'dim') {
+    drag = { mode: 'draw-dim' }
+    const tol = getSetting('snapEnabled') ? pxToWorldDist(getSetting('snapTolerance')) : 0
+    startDimDraw([Math.round(w.x), Math.round(w.y)], tol)
+    svg.setPointerCapture(e.pointerId)
+    return
+  }
+
+  // All rectangle-based tools (now includes seating).
+  const rectTypes = ['floor', 'aisle', 'obstruction', 'stage', 'tech', 'seating']
   if (rectTypes.includes(state.activeTool)) {
     drag = { mode: 'draw-rect' }
     startRectDraw(state.activeTool, [Math.round(w.x), Math.round(w.y)])
@@ -273,8 +324,31 @@ function onPointerMove(e) {
   }
   if (drag.mode === 'draw-rect') {
     updateRectDraw([Math.round(w.x), Math.round(w.y)])
+  } else if (drag.mode === 'draw-dim') {
+    const tol = getSetting('snapEnabled') ? pxToWorldDist(getSetting('snapTolerance')) : 0
+    updateDimDraw([Math.round(w.x), Math.round(w.y)], e.shiftKey, tol)
   } else if (drag.mode === 'move' || drag.mode === 'resize' || drag.mode === 'vertex') {
-    updateSelectDrag(drag, w)
+    drag.shiftHeld = e.shiftKey
+
+    // Anchor snapping — only on plain move drags, and only when shift isn't
+    // locking an axis. Tolerance + on/off come from Settings → Workspace.
+    let snappedWorld = w
+    if (drag.mode === 'move' && !drag.shiftHeld && getSetting('snapEnabled')) {
+      const dx = Math.round(w.x - drag.start.x)
+      const dy = Math.round(w.y - drag.start.y)
+      const tol = pxToWorldDist(getSetting('snapTolerance'))
+      const snap = computeMoveSnap(drag, dx, dy, tol)
+      if (snap) {
+        state.snapIndicator = snap.indicator
+        snappedWorld = { x: w.x + snap.offsetX, y: w.y + snap.offsetY }
+      } else if (state.snapIndicator) {
+        state.snapIndicator = null
+      }
+    } else if (state.snapIndicator) {
+      state.snapIndicator = null
+    }
+
+    updateSelectDrag(drag, snappedWorld)
   }
 }
 
@@ -288,8 +362,12 @@ function onPointerUp(e) {
   }
   if (drag.mode === 'draw-rect') {
     endRectDraw()
+  } else if (drag.mode === 'draw-dim') {
+    endDimDraw()
   } else if (drag.mode === 'move' || drag.mode === 'resize' || drag.mode === 'vertex') {
     endSelectDrag(drag)
+    endTransaction()    // close the undo group; a no-op gesture leaves no history entry
+    state.snapIndicator = null
   }
   drag = null
 }
@@ -311,7 +389,7 @@ function onSpaceUp(e) {
 
 function onDoubleClick(e) {
   if (state.activeTool === 'walls' && state.drawingPolygon) {
-    finishPolygonDraw()
+    finishPolygonDraw('walls')
     e.preventDefault()
   }
 }
@@ -321,14 +399,23 @@ function onContextMenu(e) {
   const w = screenToWorld(e.clientX, e.clientY)
   const room = activeRoom(); if (!room) return
 
+  // Helper: find a polygon object by id, looking in venue then active layout.
+  const findPoly = (root, oid) => {
+    const r = root.rooms.find(r => r.id === state.activeRoomId)
+    if (!r) return null
+    let o = r.objects.find(o => o.id === oid)
+    if (o) return o
+    const layout = (r.layouts || []).find(l => l.id === state.activeLayoutId)
+    return layout ? layout.objects.find(o => o.id === oid) : null
+  }
+
   // If clicking a vertex of a selected polygon, delete it.
   const vTarget = e.target.closest('[data-vertex]')
   if (vTarget) {
     const oid = vTarget.dataset.objectId
     const vi  = parseInt(vTarget.dataset.vertex, 10)
     mutateProject(p => {
-      const r = p.rooms.find(r => r.id === state.activeRoomId)
-      const o = r.objects.find(o => o.id === oid)
+      const o = findPoly(p, oid)
       if (o && o.kind === 'polygon' && o.vertices.length > 3) o.vertices.splice(vi, 1)
     })
     return
@@ -341,9 +428,8 @@ function onContextMenu(e) {
       const a = o.vertices[i], b = o.vertices[(i + 1) % o.vertices.length]
       if (distToSegment([w.x, w.y], a, b) <= tol) {
         mutateProject(p => {
-          const r = p.rooms.find(r => r.id === state.activeRoomId)
-          const obj = r.objects.find(x => x.id === o.id)
-          obj.vertices.splice(i + 1, 0, [Math.round(w.x), Math.round(w.y)])
+          const obj = findPoly(p, o.id)
+          if (obj) obj.vertices.splice(i + 1, 0, [Math.round(w.x), Math.round(w.y)])
         })
         return
       }
@@ -352,10 +438,11 @@ function onContextMenu(e) {
 }
 
 function hitTopMost(x, y, objects) {
+  const tol = pxToWorldDist(6)   // 6 px around thin shapes (dim lines, etc.)
   for (let i = objects.length - 1; i >= 0; i--) {
     const o = objects[i]
     if (o.hidden || o.locked) continue
-    if (hitTest(o, x, y)) return o
+    if (hitTest(o, x, y, tol)) return o
   }
   return null
 }
@@ -365,12 +452,66 @@ function hitTopMost(x, y, objects) {
 function render() {
   applyViewport()
   renderGrid()
+  renderGuides()        // origin marker + centerline (drawn under objects)
   renderObjects()
   renderHandles()
   renderToolLayer()
   renderStatus()
   renderCalibration()
   updateCursor()
+}
+
+let guideLayer = null
+function renderGuides() {
+  if (!guideLayer) {
+    guideLayer = document.createElementNS(SVG_NS, 'g')
+    guideLayer.setAttribute('class', 'guide-layer')
+    // Insert above grid, below objects.
+    svg.insertBefore(guideLayer, objectLayer)
+  }
+  while (guideLayer.firstChild) guideLayer.removeChild(guideLayer.firstChild)
+
+  const v = state.viewport
+  const yTop = v.y, yBot = v.y + v.h, xLeft = v.x, xRight = v.x + v.w
+
+  // Centerline (project-level vertical guide).
+  const cl = state.project.centerline
+  if (cl && cl.enabled) {
+    const line = document.createElementNS(SVG_NS, 'line')
+    line.setAttribute('x1', cl.x); line.setAttribute('y1', yTop)
+    line.setAttribute('x2', cl.x); line.setAttribute('y2', yBot)
+    line.setAttribute('stroke', cl.color || '#5be7d4')
+    line.setAttribute('stroke-width', pxToWorldDist(cl.thickness ?? 1.5))
+    line.setAttribute('stroke-dasharray', `${pxToWorldDist(8)} ${pxToWorldDist(4)}`)
+    line.setAttribute('vector-effect', 'non-scaling-stroke')
+    line.setAttribute('opacity', 0.7)
+    guideLayer.appendChild(line)
+  }
+
+  // Origin marker — small crosshair + 0,0 label.
+  const origin = state.project.origin
+  if (origin) {
+    const r = pxToWorldDist(8)
+    const cross = document.createElementNS(SVG_NS, 'path')
+    cross.setAttribute('d',
+      `M ${origin.x - r} ${origin.y} L ${origin.x + r} ${origin.y} ` +
+      `M ${origin.x} ${origin.y - r} L ${origin.x} ${origin.y + r}`
+    )
+    cross.setAttribute('stroke', '#fff')
+    cross.setAttribute('stroke-width', pxToWorldDist(1))
+    cross.setAttribute('vector-effect', 'non-scaling-stroke')
+    cross.setAttribute('opacity', 0.55)
+    guideLayer.appendChild(cross)
+    const ring = document.createElementNS(SVG_NS, 'circle')
+    ring.setAttribute('cx', origin.x); ring.setAttribute('cy', origin.y)
+    ring.setAttribute('r', pxToWorldDist(4))
+    ring.setAttribute('fill', 'none')
+    ring.setAttribute('stroke', '#fff')
+    ring.setAttribute('stroke-width', pxToWorldDist(0.8))
+    ring.setAttribute('vector-effect', 'non-scaling-stroke')
+    ring.setAttribute('opacity', 0.55)
+    guideLayer.appendChild(ring)
+  }
 }
 
 function updateCursor() {
@@ -389,17 +530,21 @@ function updateCursor() {
 
 function renderGrid() {
   while (gridLayer.firstChild) gridLayer.removeChild(gridLayer.firstChild)
+  if (!getSetting('showGrid')) return                  // hidden via Settings → Workspace
   const v = state.viewport
   const rect = svg.getBoundingClientRect()
   if (!rect.width) return
 
-  // Choose grid step in inches based on zoom: keep major step 50–150 px on screen.
+  // Spacing — 'auto' picks a step based on zoom; numeric values lock the step.
+  const userSpacing = getSetting('gridSpacing')
   const targetMajorPx = 90
   const inchesPerPx = v.w / rect.width
   const targetInches = targetMajorPx * inchesPerPx
   const candidates = [12, 24, 60, 120, 240, 600, 1200, 2400, 6000, 12000]
   let major = candidates[candidates.length - 1]
   for (const c of candidates) { if (c >= targetInches) { major = c; break } }
+  // Override with the user's chosen fixed spacing if set.
+  if (typeof userSpacing === 'number' && userSpacing > 0) major = userSpacing
   const minor = major / (major === 12 ? 4 : major === 24 ? 4 : 5)
 
   const drawLines = (step, cls) => {
@@ -444,10 +589,27 @@ function renderObjects() {
   while (objectLayer.firstChild) objectLayer.removeChild(objectLayer.firstChild)
   const room = activeRoom()
   if (!room) return
+
+  // Room structural objects — always at base opacity.
   for (const o of room.objects) {
     if (o.hidden) continue
     const node = renderObject(o)
     if (node) objectLayer.appendChild(node)
+  }
+
+  // Layout objects — active layout at full opacity, others dimmed to 35%.
+  for (const layout of (room.layouts || [])) {
+    if (layout.hidden) continue
+    const isActive = layout.id === state.activeLayoutId
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    g.dataset.layoutId = layout.id
+    if (!isActive) g.setAttribute('opacity', '0.35')
+    for (const o of layout.objects) {
+      if (o.hidden) continue
+      const node = renderObject(o)
+      if (node) g.appendChild(node)
+    }
+    if (g.childNodes.length) objectLayer.appendChild(g)
   }
 }
 
@@ -462,6 +624,8 @@ function renderObject(o) {
     el.setAttribute('href', o.src)
     el.setAttribute('preserveAspectRatio', 'none')
     el.setAttribute('opacity', o.opacity ?? 0.6)
+  } else if (o.kind === 'dim') {
+    el = buildDimGraphic(o, /* preview */ false)
   } else if (o.kind === 'rect') {
     const s = styleFor(o)
     el = document.createElementNS(SVG_NS, 'rect')
@@ -472,15 +636,51 @@ function renderObject(o) {
     el.setAttribute('stroke',       s.stroke)
     el.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
     el.setAttribute('vector-effect','non-scaling-stroke')
+    // Aisle rects: wrap with a dim callout so the user always sees the gap.
+    if (o.type === 'aisle') {
+      const g = document.createElementNS(SVG_NS, 'g')
+      g.appendChild(el)
+      g.appendChild(buildAisleDimCallout(o.x, o.y, o.w, o.h))
+      el = g
+    }
   } else if (o.kind === 'polygon') {
     const s = styleFor(o)
-    el = document.createElementNS(SVG_NS, o.vertices.length >= 3 ? 'polygon' : 'polyline')
-    el.setAttribute('points', o.vertices.map(v => v.join(',')).join(' '))
-    el.setAttribute('fill',         s.fill)
-    el.setAttribute('fill-opacity', s.fillOpacity)
-    el.setAttribute('stroke',       s.stroke)
-    el.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
-    el.setAttribute('vector-effect','non-scaling-stroke')
+    // Seating zones get a wrapper group: zone polygon + computed chairs + aisle stripe.
+    if (o.type === 'seating') {
+      const g = document.createElementNS(SVG_NS, 'g')
+      const poly = document.createElementNS(SVG_NS, o.vertices.length >= 3 ? 'polygon' : 'polyline')
+      poly.setAttribute('points', o.vertices.map(v => v.join(',')).join(' '))
+      poly.setAttribute('fill',         s.fill)
+      poly.setAttribute('fill-opacity', s.fillOpacity)
+      poly.setAttribute('stroke',       s.stroke)
+      poly.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
+      poly.setAttribute('vector-effect','non-scaling-stroke')
+      poly.setAttribute('stroke-dasharray', `${pxToWorldDist(6)} ${pxToWorldDist(4)}`)
+      g.appendChild(poly)
+      // Auto-aisles (from zone.aisles.count) — translucent yellow stripes so the
+      // user can see where the cuts are, especially when combined with manually
+      // drawn aisle objects.
+      const autoAisles = buildAutoAisles(o)
+      if (autoAisles) g.appendChild(autoAisles)
+      // Facing arrow at the centroid.
+      g.appendChild(buildFacingArrow(o))
+      // Solver output — tables first (under chairs), then chairs on top.
+      if (o.result?.tables) {
+        for (const table of o.result.tables) g.appendChild(buildTable(table))
+      }
+      if (o.result?.seats) {
+        for (const seat of o.result.seats) g.appendChild(buildChair(seat))
+      }
+      el = g
+    } else {
+      el = document.createElementNS(SVG_NS, o.vertices.length >= 3 ? 'polygon' : 'polyline')
+      el.setAttribute('points', o.vertices.map(v => v.join(',')).join(' '))
+      el.setAttribute('fill',         s.fill)
+      el.setAttribute('fill-opacity', s.fillOpacity)
+      el.setAttribute('stroke',       s.stroke)
+      el.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
+      el.setAttribute('vector-effect','non-scaling-stroke')
+    }
   } else {
     return null
   }
@@ -490,6 +690,399 @@ function renderObject(o) {
   if (o.locked) el.classList.add('plot-locked')
   if (state.selection.includes(o.id)) el.classList.add('plot-selected')
   return el
+}
+
+// One classroom or round table.
+//   kind: 'round' → drawn as a circle (diameter = table.w = table.d)
+//   else          → rectangle with rounded corners (banquet-style classroom)
+// Both get a centered dimension label (e.g., 5' for a 60" round, 8' for an
+// 8' classroom table) so size reads at a glance.
+function buildTable(table) {
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('transform', `translate(${table.x} ${table.y}) rotate(${table.rotation || 0})`)
+  g.setAttribute('class', 'plot-table')
+
+  const isRound = table.kind === 'round'
+  const w = table.w, d = table.d
+
+  if (isRound) {
+    // Outer chair-footprint circle (faint dashed) — visualizes the area the
+    // chairs around this table occupy, and matches the polygon-fit test the
+    // solver uses.
+    if (table.chairD) {
+      const outer = document.createElementNS(SVG_NS, 'circle')
+      outer.setAttribute('cx', 0); outer.setAttribute('cy', 0)
+      outer.setAttribute('r', w / 2 + table.chairD)
+      outer.setAttribute('fill', 'none')
+      outer.setAttribute('stroke', '#FF2D9D')
+      outer.setAttribute('stroke-width', pxToWorldDist(0.4))
+      outer.setAttribute('stroke-opacity', 0.28)
+      outer.setAttribute('stroke-dasharray', `${pxToWorldDist(3)} ${pxToWorldDist(3)}`)
+      outer.setAttribute('vector-effect', 'non-scaling-stroke')
+      g.appendChild(outer)
+    }
+    const c = document.createElementNS(SVG_NS, 'circle')
+    c.setAttribute('cx', 0); c.setAttribute('cy', 0)
+    c.setAttribute('r', w / 2)
+    c.setAttribute('fill', '#1a1f2e')
+    c.setAttribute('stroke', '#FF2D9D')
+    c.setAttribute('stroke-width', pxToWorldDist(0.6))
+    c.setAttribute('vector-effect', 'non-scaling-stroke')
+    g.appendChild(c)
+  } else {
+    const r = document.createElementNS(SVG_NS, 'rect')
+    r.setAttribute('x', -w / 2); r.setAttribute('y', -d / 2)
+    r.setAttribute('width', w);  r.setAttribute('height', d)
+    r.setAttribute('rx', 2)
+    r.setAttribute('fill', '#1a1f2e')
+    r.setAttribute('stroke', '#FF2D9D')
+    r.setAttribute('stroke-width', pxToWorldDist(0.6))
+    r.setAttribute('vector-effect', 'non-scaling-stroke')
+    g.appendChild(r)
+  }
+
+  // Dimension label — long side (or diameter for rounds) in feet.
+  const ft = w / 12
+  const ftLabel = (Math.abs(ft - Math.round(ft)) < 0.05)
+    ? `${Math.round(ft)}'`
+    : `${ft.toFixed(1)}'`
+  const fontSize = isRound ? Math.min(w * 0.18, 12) : Math.min(d * 0.55, 9)
+  const label = document.createElementNS(SVG_NS, 'text')
+  label.setAttribute('x', 0); label.setAttribute('y', 0)
+  label.setAttribute('text-anchor', 'middle')
+  label.setAttribute('dominant-baseline', 'central')
+  label.setAttribute('font-size', fontSize)
+  label.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, monospace')
+  label.setAttribute('fill', '#FF2D9D')
+  label.setAttribute('opacity', '0.55')
+  label.textContent = ftLabel
+  g.appendChild(label)
+
+  return g
+}
+
+// One chair — translucent magenta fill, magenta hairline stroke around all
+// four sides, and a heavier stroke on the BACK edge (the side facing AWAY
+// from the table / stage, so the chair "faces" inward toward what it's at).
+//
+// Local frame: chair sits with its front at -y and back at +y. Rotation is
+// applied last so the back-stroke rotates with the chair.
+function buildChair(seat) {
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('transform', `translate(${seat.x} ${seat.y}) rotate(${seat.rotation || 0})`)
+  g.setAttribute('class', 'plot-chair')
+
+  const w = seat.w, d = seat.d
+  const r = document.createElementNS(SVG_NS, 'rect')
+  r.setAttribute('x', -w / 2); r.setAttribute('y', -d / 2)
+  r.setAttribute('width', w);  r.setAttribute('height', d)
+  r.setAttribute('rx', 1.5)
+  r.setAttribute('fill', '#FF2D9D')
+  r.setAttribute('fill-opacity', 0.32)
+  r.setAttribute('stroke', '#FF2D9D')
+  r.setAttribute('stroke-width', pxToWorldDist(0.5))
+  r.setAttribute('vector-effect', 'non-scaling-stroke')
+  g.appendChild(r)
+
+  // Back-of-chair stroke — heavier line on the far side from the table.
+  const back = document.createElementNS(SVG_NS, 'line')
+  back.setAttribute('x1', -w / 2); back.setAttribute('y1', d / 2)
+  back.setAttribute('x2',  w / 2); back.setAttribute('y2', d / 2)
+  back.setAttribute('stroke', '#FF2D9D')
+  back.setAttribute('stroke-width', pxToWorldDist(2))
+  back.setAttribute('stroke-linecap', 'round')
+  back.setAttribute('vector-effect', 'non-scaling-stroke')
+  g.appendChild(back)
+
+  return g
+}
+
+// One dimension line. Two endpoints, a thin dashed line between them, small
+// perpendicular tick marks at each end, and a centered distance label.
+// Used as a snap target / construction guide. `preview = true` is for the
+// drag-in-progress preview (slightly different style — no committed dim object
+// exists yet so we accept the partial shape).
+function buildDimGraphic(d, preview) {
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('class', 'plot-dim' + (preview ? ' plot-dim-preview' : ''))
+  const stroke = '#5be7d4'
+  const dx = d.x2 - d.x1, dy = d.y2 - d.y1
+  const len = Math.hypot(dx, dy)
+  if (len < 1) return g
+  const nx = -dy / len, ny = dx / len    // perpendicular unit vector
+  const tick = 8                          // tick length, in world inches
+
+  // Main line
+  const line = document.createElementNS(SVG_NS, 'line')
+  line.setAttribute('x1', d.x1); line.setAttribute('y1', d.y1)
+  line.setAttribute('x2', d.x2); line.setAttribute('y2', d.y2)
+  line.setAttribute('stroke', stroke)
+  line.setAttribute('stroke-width', pxToWorldDist(1))
+  line.setAttribute('stroke-dasharray', `${pxToWorldDist(5)} ${pxToWorldDist(3)}`)
+  line.setAttribute('vector-effect', 'non-scaling-stroke')
+  line.setAttribute('opacity', preview ? 0.6 : 0.9)
+  g.appendChild(line)
+
+  // End ticks (perpendicular short lines)
+  for (const [x, y] of [[d.x1, d.y1], [d.x2, d.y2]]) {
+    const t = document.createElementNS(SVG_NS, 'line')
+    t.setAttribute('x1', x - nx * tick); t.setAttribute('y1', y - ny * tick)
+    t.setAttribute('x2', x + nx * tick); t.setAttribute('y2', y + ny * tick)
+    t.setAttribute('stroke', stroke)
+    t.setAttribute('stroke-width', pxToWorldDist(1.2))
+    t.setAttribute('stroke-linecap', 'round')
+    t.setAttribute('vector-effect', 'non-scaling-stroke')
+    g.appendChild(t)
+  }
+
+  // Distance label, centered, slightly above the line on its perpendicular.
+  const cx = (d.x1 + d.x2) / 2, cy = (d.y1 + d.y2) / 2
+  const off = 9   // offset from line, in world inches
+  const lx = cx + nx * off, ly = cy + ny * off
+  // Rotate text to be parallel to the line; flip if it would read upside-down.
+  let angDeg = Math.atan2(dy, dx) * 180 / Math.PI
+  if (angDeg > 90 || angDeg < -90) angDeg += 180
+
+  const text = document.createElementNS(SVG_NS, 'text')
+  text.setAttribute('x', lx); text.setAttribute('y', ly)
+  text.setAttribute('text-anchor', 'middle')
+  text.setAttribute('dominant-baseline', 'central')
+  text.setAttribute('font-size', 8)
+  text.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, monospace')
+  text.setAttribute('fill', stroke)
+  text.setAttribute('opacity', preview ? 0.7 : 0.95)
+  text.setAttribute('transform', `rotate(${angDeg} ${lx} ${ly})`)
+  text.textContent = formatDimLength(len)
+  g.appendChild(text)
+
+  if (!preview) g.dataset.objectId = d.id
+  return g
+}
+
+function formatDimLength(inches) {
+  // Foot/inch like 12'-6". Match the conventions used in units.js.
+  const totalIn = Math.round(inches)
+  const ft = Math.floor(totalIn / 12)
+  const inRem = totalIn - ft * 12
+  if (ft === 0) return `${inRem}"`
+  if (inRem === 0) return `${ft}'-0"`
+  return `${ft}'-${inRem}"`
+}
+
+// Dimension callout for an aisle. Always reads horizontally:
+//   • Vertical aisle (taller than wide) → horizontal arrows pointing inward
+//     at the left & right edges, with the X-distance label between them.
+//   • Horizontal aisle (wider than tall) → vertical arrows at the top & bottom
+//     edges, label written horizontally to the side.
+//
+// `worldX/Y/W/H` define the aisle rect in whatever frame the parent group is
+// rendering in (world for user aisles, local-frame for auto-aisle stripes).
+// `counterRotateDeg` keeps the label upright when the parent group is rotated
+// (used by auto-aisles inside the seating zone group).
+function buildAisleDimCallout(worldX, worldY, w, h, counterRotateDeg = 0) {
+  const isWide = w > h
+  const widthVal = Math.min(w, h)
+  const label = formatDimLength(widthVal)
+  const stroke = '#d4a72c'
+  const sw = pxToWorldDist(0.8)
+  const arrow = pxToWorldDist(6)   // arrowhead size (~6px on screen)
+
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('class', 'aisle-dim')
+  g.setAttribute('pointer-events', 'none')
+
+  // TODO: future — let the user click-and-drag the callout along the aisle's
+  // long axis to reposition it. Constrain inside the aisle bbox; persist the
+  // user's chosen offset on the aisle (or zone) object. For now we lock to
+  // the aisle's center.
+  if (!isWide) {
+    // Vertical aisle: horizontal dim line CENTERED on the aisle's Y axis.
+    const dimY = worldY + h / 2
+    const x1 = worldX, x2 = worldX + w
+
+    const line = document.createElementNS(SVG_NS, 'line')
+    line.setAttribute('x1', x1); line.setAttribute('y1', dimY)
+    line.setAttribute('x2', x2); line.setAttribute('y2', dimY)
+    line.setAttribute('stroke', stroke)
+    line.setAttribute('stroke-width', sw)
+    line.setAttribute('opacity', 0.65)
+    line.setAttribute('vector-effect', 'non-scaling-stroke')
+    g.appendChild(line)
+
+    // Arrows INSIDE the aisle pointing OUTWARD: tip at the edge, body inward.
+    g.appendChild(arrowhead(x1, dimY, 180, arrow, stroke))   // tip at left edge, points left out
+    g.appendChild(arrowhead(x2, dimY, 0,   arrow, stroke))   // tip at right edge, points right out
+
+    const cx = (x1 + x2) / 2
+    const cy = dimY - arrow - pxToWorldDist(3)
+    g.appendChild(dimText(cx, cy, label, widthVal, stroke, counterRotateDeg))
+  } else {
+    // Horizontal aisle: vertical dim line CENTERED on the aisle's X axis.
+    const dimX = worldX + w / 2
+    const y1 = worldY, y2 = worldY + h
+
+    const line = document.createElementNS(SVG_NS, 'line')
+    line.setAttribute('x1', dimX); line.setAttribute('y1', y1)
+    line.setAttribute('x2', dimX); line.setAttribute('y2', y2)
+    line.setAttribute('stroke', stroke)
+    line.setAttribute('stroke-width', sw)
+    line.setAttribute('opacity', 0.65)
+    line.setAttribute('vector-effect', 'non-scaling-stroke')
+    g.appendChild(line)
+
+    g.appendChild(arrowhead(dimX, y1, 270, arrow, stroke))   // top tip, points up out
+    g.appendChild(arrowhead(dimX, y2,  90, arrow, stroke))   // bottom tip, points down out
+
+    // Label horizontal, set to the right of the dim line.
+    const cx = dimX + arrow * 1.6
+    const cy = (y1 + y2) / 2
+    g.appendChild(dimText(cx, cy, label, widthVal, stroke, counterRotateDeg, 'start'))
+  }
+  return g
+}
+
+function arrowhead(x, y, angleDeg, size, color) {
+  // Filled triangle. Tip at (x,y), pointing in `angleDeg` direction
+  // (0=right, 90=down, 180=left, 270=up).
+  const rad = angleDeg * Math.PI / 180
+  const cos = Math.cos(rad), sin = Math.sin(rad)
+  const baseX = x - cos * size, baseY = y - sin * size
+  const px = -sin, py = cos
+  const halfW = size * 0.5
+  const ax = baseX + px * halfW, ay = baseY + py * halfW
+  const bx = baseX - px * halfW, by = baseY - py * halfW
+  const path = document.createElementNS(SVG_NS, 'path')
+  path.setAttribute('d', `M ${x} ${y} L ${ax} ${ay} L ${bx} ${by} Z`)
+  path.setAttribute('fill', color)
+  return path
+}
+
+function dimText(cx, cy, label, widthInches, color, counterRotateDeg, anchor = 'middle') {
+  const text = document.createElementNS(SVG_NS, 'text')
+  text.setAttribute('x', cx); text.setAttribute('y', cy)
+  text.setAttribute('text-anchor', anchor)
+  text.setAttribute('dominant-baseline', 'central')
+  text.setAttribute('font-size', Math.min(widthInches * 0.42, 10))
+  text.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, monospace')
+  text.setAttribute('fill', color)
+  text.setAttribute('opacity', 0.95)
+  text.setAttribute('pointer-events', 'none')
+  // Counter-rotate so the label stays horizontal even when the parent group
+  // is rotated (auto-aisles inside a tilted seating zone, etc.).
+  if (counterRotateDeg) text.setAttribute('transform', `rotate(${counterRotateDeg} ${cx} ${cy})`)
+  text.textContent = label
+  return text
+}
+
+// Translucent stripes inside the seating zone showing where auto-placed
+// aisles will land. Mirrors the solver's computeAislePositions math so the
+// preview is exact. Returns null if the zone has no auto aisles.
+function buildAutoAisles(zone) {
+  const count = zone.aisles?.count ?? (zone.centerAisle?.enabled === false ? 0 : 1)
+  if (count <= 0) return null
+  const aisleW    = zone.aisles?.width ?? zone.centerAisle?.width ?? 144
+  const chairW    = zone.chairW || 18
+  const seatGap   = zone.seatGap || 0
+  const maxPerRow = zone.maxPerRow || 12
+
+  // Centroid + local bbox so we know how tall to draw the stripes.
+  let cx = 0, cy = 0
+  for (const [x, y] of zone.vertices) { cx += x; cy += y }
+  cx /= zone.vertices.length; cy /= zone.vertices.length
+  const r = -((zone.rotation || 0) * Math.PI / 180)
+  const cos = Math.cos(r), sin = Math.sin(r)
+  let minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity
+  for (const [x, y] of zone.vertices) {
+    const lx = (x - cx) * cos - (y - cy) * sin
+    const ly = (x - cx) * sin + (y - cy) * cos
+    if (lx < minX) minX = lx; if (lx > maxX) maxX = lx
+    if (ly < minY) minY = ly; if (ly > maxY) maxY = ly
+  }
+
+  // Aisle positions — match whatever the active solver does so the visual
+  // stripes line up with the placed chairs/tables.
+  //   theater                    → maxPerRow chairs of width
+  //   classroom                  → 24' fire-code cap
+  //   rounds (Fixed aisles ON)   → polygon evenly subdivided
+  //   rounds (Fixed aisles OFF)  → SHIFT mode: aisles flush to packed blocks
+  const polyW = maxX - minX
+  let positions
+  if (zone.style === 'rounds' && zone.fixedAisles === false) {
+    const tableD       = zone.tableD || 72
+    const tableSpacing = zone.tableSpacing ?? 60
+    positions = computeShiftedRoundAislePositions(count, aisleW, polyW, minX, tableD, tableSpacing)
+  } else {
+    const sectionW = (zone.style === 'classroom') ? 24 * 12
+                   : (zone.style === 'rounds')    ? Math.max(60, (polyW - count * aisleW) / (count + 1))
+                   :                                 maxPerRow * chairW + (maxPerRow - 1) * seatGap
+    positions = computeAislePositions(count, aisleW, sectionW)
+  }
+  if (!positions.length) return null
+
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('class', 'plot-auto-aisle')
+  g.setAttribute('transform', `translate(${cx} ${cy}) rotate(${zone.rotation || 0})`)
+  for (const c of positions) {
+    const aMin = c - aisleW / 2
+    if (aMin > maxX || aMin + aisleW < minX) continue   // wholly outside polygon
+    const stripe = document.createElementNS(SVG_NS, 'rect')
+    stripe.setAttribute('x', aMin); stripe.setAttribute('y', minY)
+    stripe.setAttribute('width', aisleW); stripe.setAttribute('height', maxY - minY)
+    stripe.setAttribute('fill', '#d4a72c')
+    stripe.setAttribute('fill-opacity', 0.10)
+    stripe.setAttribute('stroke', '#d4a72c')
+    stripe.setAttribute('stroke-width', pxToWorldDist(1))
+    stripe.setAttribute('stroke-dasharray', `${pxToWorldDist(4)} ${pxToWorldDist(3)}`)
+    stripe.setAttribute('stroke-opacity', 0.55)
+    stripe.setAttribute('vector-effect', 'non-scaling-stroke')
+    g.appendChild(stripe)
+
+    // Dim callout near the stage end of the stripe so it doesn't fight the
+    // facing arrow at the centroid. The seating zone group is rotated by
+    // zone.rotation, so we counter-rotate the label to keep it horizontal.
+    g.appendChild(buildAisleDimCallout(aMin, minY, aisleW, maxY - minY, -(zone.rotation || 0)))
+  }
+  return g
+}
+
+// Facing arrow showing the zone's forward direction. Drawn OUTSIDE the polygon
+// at the front edge (in local frame, just above minY) so it doesn't fight
+// auto-aisle dim callouts that sit at the polygon centroid.
+function buildFacingArrow(zone) {
+  // Centroid in world coords.
+  let cx = 0, cy = 0
+  for (const [x, y] of zone.vertices) { cx += x; cy += y }
+  cx /= zone.vertices.length; cy /= zone.vertices.length
+
+  // Local-frame minY → "front" of the zone in its facing direction.
+  const r = -((zone.rotation || 0) * Math.PI / 180)
+  const cos = Math.cos(r), sin = Math.sin(r)
+  let minY = Infinity
+  for (const [x, y] of zone.vertices) {
+    const ly = (x - cx) * sin + (y - cy) * cos
+    if (ly < minY) minY = ly
+  }
+
+  // Render in a translated+rotated group so we can draw in local frame.
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('transform', `translate(${cx} ${cy}) rotate(${zone.rotation || 0})`)
+  g.setAttribute('class', 'plot-facing')
+
+  const ay = minY - 18                  // 18" outside the front edge
+  const len = 18, head = 7
+  const path = document.createElementNS(SVG_NS, 'path')
+  // Arrow points UP in local frame (toward the stage / facing direction).
+  path.setAttribute('d',
+    `M 0 ${ay + len / 2} L 0 ${ay - len / 2} ` +
+    `M ${-head / 2} ${ay - len / 2 + head} L 0 ${ay - len / 2} L ${head / 2} ${ay - len / 2 + head}`
+  )
+  path.setAttribute('stroke', '#FF2D9D')
+  path.setAttribute('stroke-width', pxToWorldDist(1.5))
+  path.setAttribute('fill', 'none')
+  path.setAttribute('vector-effect', 'non-scaling-stroke')
+  path.setAttribute('opacity', 0.75)
+  g.appendChild(path)
+  return g
 }
 
 function renderHandles() {
@@ -609,6 +1202,36 @@ function renderToolLayer() {
       c.setAttribute('vector-effect', 'non-scaling-stroke')
       toolLayer.appendChild(c)
     }
+  }
+  // Active dim line being drawn — preview using the live committed style.
+  const dd = state.drawingDim
+  if (dd) {
+    toolLayer.appendChild(buildDimGraphic(dd, /* preview */ true))
+  }
+
+  // Snap indicator — cyan ring over the snap point (and a small cross for
+  // visibility). Centers and midpoints get a slightly larger ring than corners.
+  const snap = state.snapIndicator
+  if (snap) {
+    const r = pxToWorldDist(snap.kind === 'corner' ? 5 : 6)
+    const ring = document.createElementNS(SVG_NS, 'circle')
+    ring.setAttribute('cx', snap.x); ring.setAttribute('cy', snap.y)
+    ring.setAttribute('r', r)
+    ring.setAttribute('fill', 'none')
+    ring.setAttribute('stroke', '#5be7d4')
+    ring.setAttribute('stroke-width', pxToWorldDist(1.5))
+    ring.setAttribute('vector-effect', 'non-scaling-stroke')
+    toolLayer.appendChild(ring)
+    const tick = pxToWorldDist(3)
+    const cross = document.createElementNS(SVG_NS, 'path')
+    cross.setAttribute('d',
+      `M ${snap.x - tick} ${snap.y} L ${snap.x + tick} ${snap.y} ` +
+      `M ${snap.x} ${snap.y - tick} L ${snap.x} ${snap.y + tick}`
+    )
+    cross.setAttribute('stroke', '#5be7d4')
+    cross.setAttribute('stroke-width', pxToWorldDist(1))
+    cross.setAttribute('vector-effect', 'non-scaling-stroke')
+    toolLayer.appendChild(cross)
   }
 }
 

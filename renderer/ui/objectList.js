@@ -1,6 +1,7 @@
 // Photoshop-style layers panel. Top of list = top of z-order.
+// Two sections: VENUE (room.objects) and LAYOUT (active layout's objects).
 
-import { state, setState, subscribe, mutateProject, activeRoom, objectName, reorderObject, TYPE_STYLES } from '../state.js'
+import { state, setState, subscribe, mutateProject, activeRoom, activeLayout, objectName, reorderObject, TYPE_STYLES } from '../state.js'
 import { duplicateObjectById, deleteObjectById } from '../app.js'
 import { ICON } from './icons.js'
 
@@ -30,21 +31,45 @@ export function initObjectList(host) {
     list.innerHTML = ''
     const room = activeRoom()
     if (!room) return
-    if (!room.objects.length) {
-      const empty = document.createElement('div')
-      empty.className = 'layers-empty'
-      empty.textContent = 'No objects yet.'
-      list.appendChild(empty)
-      return
+    const layout = activeLayout()
+
+    // Layout section first (visually on top — these render above venue objects).
+    if (layout) {
+      list.appendChild(sectionHeader(`Layout · ${layout.name}`))
+      if (!layout.objects.length) {
+        list.appendChild(emptyHint('No layout objects. Use the Seating tool to add one.'))
+      } else {
+        for (let i = layout.objects.length - 1; i >= 0; i--) {
+          list.appendChild(buildRow(layout.objects[i], i, 'layout', layout))
+        }
+      }
     }
-    // Top of stack first (rendered last, painted on top).
-    for (let i = room.objects.length - 1; i >= 0; i--) {
-      list.appendChild(buildRow(room.objects[i], i))
+
+    list.appendChild(sectionHeader('Venue'))
+    if (!room.objects.length) {
+      list.appendChild(emptyHint('No venue objects yet.'))
+    } else {
+      for (let i = room.objects.length - 1; i >= 0; i--) {
+        list.appendChild(buildRow(room.objects[i], i, 'venue', room))
+      }
     }
   }
 
-  function buildRow(o, idx) {
-    const room = activeRoom()
+  function sectionHeader(label) {
+    const el = document.createElement('div')
+    el.className = 'layers-section'
+    el.textContent = label
+    return el
+  }
+
+  function emptyHint(text) {
+    const el = document.createElement('div')
+    el.className = 'layers-empty'
+    el.textContent = text
+    return el
+  }
+
+  function buildRow(o, idx, containerKey, container) {
     const row = document.createElement('div')
     row.className = 'layer-row'
     row.classList.toggle('active', state.selection.includes(o.id))
@@ -53,6 +78,7 @@ export function initObjectList(host) {
     row.draggable = true
     row.dataset.index = idx
     row.dataset.objectId = o.id
+    row.dataset.container = containerKey
 
     const typeLabel = (TYPE_STYLES[o.type] && TYPE_STYLES[o.type].label) || o.type
     const swatchColor = (TYPE_STYLES[o.type] && TYPE_STYLES[o.type].stroke !== 'none')
@@ -63,7 +89,7 @@ export function initObjectList(host) {
       <button class="layer-toggle vis ${o.hidden ? 'off' : 'on'}" data-action="toggle-hidden" title="${o.hidden ? 'Show' : 'Hide'}">${o.hidden ? ICON.eyeClosed : ICON.eyeOpen}</button>
       <button class="layer-toggle lk  ${o.locked ? 'on' : 'off'}" data-action="toggle-locked" title="${o.locked ? 'Unlock' : 'Lock'}">${o.locked ? ICON.lockClosed : ICON.lockOpen}</button>
       <span class="layer-swatch" style="background:${swatchColor}"></span>
-      <span class="layer-name" title="Double-click to rename">${escapeHtml(objectName(o, room))}</span>
+      <span class="layer-name" title="Double-click to rename">${escapeHtml(objectName(o, container))}</span>
       <span class="layer-type">${typeLabel}</span>
     `
 
@@ -105,9 +131,10 @@ export function initObjectList(host) {
       showLayerMenu(e.clientX, e.clientY, o)
     })
 
-    // Drag-reorder
+    // Drag-reorder — confined to its own container (venue<->layout drops ignored).
     row.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/x-layer-idx', String(idx))
+      e.dataTransfer.setData('text/x-container', containerKey)
       e.dataTransfer.effectAllowed = 'move'
       row.classList.add('dragging')
     })
@@ -124,17 +151,18 @@ export function initObjectList(host) {
     row.addEventListener('drop', (e) => {
       e.preventDefault()
       row.classList.remove('drop-above', 'drop-below')
+      const fromContainer = e.dataTransfer.getData('text/x-container')
       const fromIdx = parseInt(e.dataTransfer.getData('text/x-layer-idx'), 10)
       if (isNaN(fromIdx)) return
+      if (fromContainer && fromContainer !== containerKey) return  // no cross-container drag
       const rect = row.getBoundingClientRect()
       const above = (e.clientY - rect.top) < rect.height / 2
-      // List is reversed — visually-above means a HIGHER array index.
       let toIdx = above ? idx + 1 : idx
       if (fromIdx < toIdx) toIdx -= 1
       if (fromIdx === toIdx) return
       mutateProject(() => {
-        const r = activeRoom()
-        if (r) reorderObject(r, fromIdx, Math.max(0, Math.min(r.objects.length - 1, toIdx)))
+        const target = containerKey === 'venue' ? activeRoom() : activeLayout()
+        if (target) reorderObject(target, fromIdx, Math.max(0, Math.min(target.objects.length - 1, toIdx)))
       })
     })
 

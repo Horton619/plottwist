@@ -57,6 +57,9 @@ function createWindow() {
       submenu: [
         { label: 'About PlotTwist', role: 'about' },
         { type: 'separator' },
+        { label: 'Settings…', accelerator: 'CmdOrCtrl+,',
+          click: () => mainWindow.webContents.send('menu-open-settings') },
+        { type: 'separator' },
         { label: 'Quit', accelerator: 'CmdOrCtrl+Q', role: 'quit' }
       ]
     },
@@ -86,7 +89,11 @@ function createWindow() {
     {
       label: 'View',
       submenu: [
-        { label: 'Toggle Developer Tools', accelerator: 'F12', click: () => mainWindow.webContents.toggleDevTools() }
+        { label: 'Toggle Developer Tools', accelerator: 'F12', click: () => mainWindow.webContents.toggleDevTools() },
+        { type: 'separator' },
+        // TEMP — remove before ship. Quick "kill app + relaunch" for dev iteration.
+        { label: 'Restart App', accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => { app.relaunch(); app.exit(0) } },
       ]
     }
   ]
@@ -116,6 +123,14 @@ ipcMain.handle('quit-now', () => {
 })
 
 ipcMain.handle('get-app-version', () => app.getVersion())
+
+// Opens an HTTPS URL in the user's default browser. Restricted to http/https
+// to avoid letting the renderer launch arbitrary URI schemes.
+ipcMain.handle('open-external', async (_event, url) => {
+  if (typeof url !== 'string') return false
+  if (!/^https?:\/\//i.test(url)) return false
+  try { await shell.openExternal(url); return true } catch { return false }
+})
 
 ipcMain.handle('check-for-updates', async () => {
   try {
