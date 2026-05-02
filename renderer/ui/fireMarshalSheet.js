@@ -13,8 +13,23 @@ let dataRef  = null   // cached fire-code JSON
 
 export async function initFireMarshalSheet() {
   ensureRoot()
-  // Re-render whenever fire-marshal state or selection changes.
-  subscribe(() => { if (isOpen()) render() })
+  // Re-render on every state change. Two extra behaviors layered on top:
+  //   • If the sheet is open and project mutations changed the jurisdictions
+  //     since the last validator run, re-run the validator so toggling AHJs
+  //     in Settings live-updates the open report.
+  //   • render() handles both open and closed states (showing/hiding the
+  //     panel + clearing innerHTML) — never gate on isOpen() here, otherwise
+  //     close transitions don't paint.
+  subscribe(() => {
+    render()
+    if (!isOpen() || !dataRef) return
+    const active  = getProjectJurisdictions(state.project)
+    const lastIds = state.fireMarshal?.result?.activeIds || []
+    if (JSON.stringify(active) !== JSON.stringify(lastIds)) {
+      const result = runFireMarshal(state.project, state.activeLayoutId, active, dataRef)
+      setState({ fireMarshal: { ...state.fireMarshal, result } })
+    }
+  })
   // Esc closes the sheet — matches the Settings + Export modals.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isOpen() && !state.pickMode) closeSheet()
@@ -39,6 +54,12 @@ export async function runAndShow() {
 
 export function closeSheet() {
   setState({ fireMarshal: { ...(state.fireMarshal || {}), open: false, focusedId: null } })
+  // Belt-and-suspenders: even though render() will be called by the subscribe,
+  // pull the panel out of the DOM flow immediately so the close feels snappy.
+  if (sheetEl) {
+    sheetEl.classList.remove('open')
+    sheetEl.innerHTML = ''
+  }
 }
 
 export function isOpen() {
@@ -118,7 +139,8 @@ function render() {
   sheetEl.querySelector('[data-action="close"]')?.addEventListener('click', closeSheet)
   sheetEl.querySelector('[data-action="rerun"]')?.addEventListener('click', runAndShow)
   sheetEl.querySelector('[data-action="settings"]')?.addEventListener('click', () => {
-    closeSheet()
+    // Don't close — let Settings open on top so the user can watch the sheet
+    // refresh in place as they toggle jurisdictions.
     openSettings('fireCode')
   })
   sheetEl.querySelectorAll('[data-violation-id]').forEach(row => {

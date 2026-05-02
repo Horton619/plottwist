@@ -586,7 +586,10 @@ function renderGuides() {
     line.setAttribute('x2', cl.x); line.setAttribute('y2', yBot)
     line.setAttribute('stroke', cl.color || BRAND.centerline)
     line.setAttribute('stroke-width', pxToWorldDist(cl.thickness ?? 1.5))
-    line.setAttribute('stroke-dasharray', `${pxToWorldDist(8)} ${pxToWorldDist(4)}`)
+    // With vector-effect=non-scaling-stroke, dasharray is interpreted in
+    // screen pixels — keep these as constants so dashes look the same at any
+    // zoom. (Earlier code multiplied by pxToWorldDist which double-counted.)
+    line.setAttribute('stroke-dasharray', '8 4')
     line.setAttribute('vector-effect', 'non-scaling-stroke')
     line.setAttribute('opacity', 0.7)
     guideLayer.appendChild(line)
@@ -759,7 +762,7 @@ function renderObject(o) {
       poly.setAttribute('stroke',       s.stroke)
       poly.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
       poly.setAttribute('vector-effect','non-scaling-stroke')
-      poly.setAttribute('stroke-dasharray', `${pxToWorldDist(6)} ${pxToWorldDist(4)}`)
+      poly.setAttribute('stroke-dasharray', '6 4')
       g.appendChild(poly)
       // Auto-aisles (from zone.aisles.count) — translucent yellow stripes so the
       // user can see where the cuts are, especially when combined with manually
@@ -821,7 +824,7 @@ function buildTable(table) {
       outer.setAttribute('stroke', BRAND.chair)
       outer.setAttribute('stroke-width', pxToWorldDist(0.4))
       outer.setAttribute('stroke-opacity', 0.28)
-      outer.setAttribute('stroke-dasharray', `${pxToWorldDist(3)} ${pxToWorldDist(3)}`)
+      outer.setAttribute('stroke-dasharray', '3 3')
       outer.setAttribute('vector-effect', 'non-scaling-stroke')
       g.appendChild(outer)
     }
@@ -922,7 +925,7 @@ function buildDimGraphic(d, preview) {
   line.setAttribute('x2', d.x2); line.setAttribute('y2', d.y2)
   line.setAttribute('stroke', stroke)
   line.setAttribute('stroke-width', pxToWorldDist(1))
-  line.setAttribute('stroke-dasharray', `${pxToWorldDist(5)} ${pxToWorldDist(3)}`)
+  line.setAttribute('stroke-dasharray', '5 3')
   line.setAttribute('vector-effect', 'non-scaling-stroke')
   line.setAttribute('opacity', preview ? 0.6 : 0.9)
   g.appendChild(line)
@@ -1140,7 +1143,7 @@ function buildAutoAisles(zone) {
     stripe.setAttribute('fill-opacity', 0.10)
     stripe.setAttribute('stroke', ANNOT.aisle.canvas)
     stripe.setAttribute('stroke-width', pxToWorldDist(1))
-    stripe.setAttribute('stroke-dasharray', `${pxToWorldDist(4)} ${pxToWorldDist(3)}`)
+    stripe.setAttribute('stroke-dasharray', '4 3')
     stripe.setAttribute('stroke-opacity', 0.55)
     stripe.setAttribute('vector-effect', 'non-scaling-stroke')
     g.appendChild(stripe)
