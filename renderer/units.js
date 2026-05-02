@@ -21,9 +21,10 @@ export function parseInches(input) {
   // 36"
   m = s.match(/^(-?\d+(?:\.\d+)?)\s*"$/)
   if (m) return Math.round(parseFloat(m[1]))
-  // bare number = inches
+  // bare number = feet (PlotTwist works at room scale — 30 reads as 30',
+  // not 2'-6"). Add `"` for inches.
   m = s.match(/^(-?\d+(?:\.\d+)?)$/)
-  if (m) return Math.round(parseFloat(m[1]))
+  if (m) return Math.round(parseFloat(m[1]) * 12)
   return null
 }
 

@@ -401,6 +401,9 @@ Don't build ahead. Each step ships before the next starts.
 
 ### Backlog / nice-to-have
 
+- **Image rotation** — `⌘L` (CW) / `⇧⌘L` (CCW) to rotate underlay images 90° (Vectorworks convention). Needs storing `rotation` on image objects, applying SVG rotate transform around image center on render, and updating `objectBounds` / hit-test to use the rotated AABB so handles + drag still work in the rotated frame.
+- **Walls as a containment boundary, not a blocker** — chairs whose footprint extends past the walls polygon should be dropped. Walls drawn as a closed perimeter ring should clip the seating zone (so a rectangular zone over an L-shaped room produces only chairs that fit within the L). `BLOCKING` doesn't fit this — walls flips the test (drop chairs OUTSIDE, not INSIDE). Add `opts.containers[]` plumbed through the solver dispatcher and a `pointInPolygon` containment check.
+- **Print preview** — show a static preview of the export before saving so the user can catch scale/title-block issues without round-tripping through Save → Open. Preview uses the same `buildExportSVG` rendered into an inline `<img>`.
 - Tab-to-type in canvas (currently the right-panel inputs cover the same ground; defer until users miss it).
 - Calibration on per-image basis with a stored `pxPerInch` so the underlay can be re-rendered at known scales.
 - Multi-image batch calibration — currently each new import clobbers the previous calibration session.

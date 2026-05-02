@@ -182,13 +182,14 @@ ipcMain.handle('read-binary-file', (_e, filePath) => {
   return fs.readFileSync(filePath)
 })
 
-ipcMain.handle('export-image-dialog', async (_e, defaultName) => {
+ipcMain.handle('export-image-dialog', async (_e, defaultName, kind) => {
+  // Order matters — first filter is the dropdown's default selection.
+  const png = { name: 'PNG Image',   extensions: ['png'] }
+  const pdf = { name: 'PDF Document', extensions: ['pdf'] }
+  const filters = kind === 'pdf' ? [pdf, png] : [png, pdf]
   return dialog.showSaveDialog(mainWindow, {
-    defaultPath: defaultName || 'layout.png',
-    filters: [
-      { name: 'PNG Image', extensions: ['png'] },
-      { name: 'PDF Document', extensions: ['pdf'] }
-    ]
+    defaultPath: defaultName || (kind === 'pdf' ? 'layout.pdf' : 'layout.png'),
+    filters,
   })
 })
 

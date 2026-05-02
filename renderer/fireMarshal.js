@@ -129,16 +129,21 @@ export function runFireMarshal(project, layoutId, activeIds, data) {
   // ── Aisle min width + occupancy factor ──────────────────────────────────
   const aRule = result.strictest.aisleMinWidth
   const fRule = result.strictest.aisleCapacityFactor
-  if (aRule && aisleObjects.length) {
+  if (aRule) {
+    const required = Math.max(
+      aRule.value,
+      fRule ? Math.ceil(totalOccupants * fRule.value) : 0
+    )
+    const reasonFactor = fRule && totalOccupants * fRule.value > aRule.value
+    const c = cite(aRule)
+    const buildMsg = (narrow) => reasonFactor
+      ? `Aisle is ${formatInches(narrow)}; ${totalOccupants} occupants × ${fRule.value} in/occ = ${formatInches(Math.ceil(totalOccupants * fRule.value))} required.`
+      : `Aisle is ${formatInches(narrow)}; minimum is ${formatInches(required)}.`
+
+    // User-drawn aisle rect objects in the layout.
     for (const a of aisleObjects) {
       const narrow = Math.min(Math.abs(a.w), Math.abs(a.h))
-      const required = Math.max(
-        aRule ? aRule.value : 0,
-        fRule ? Math.ceil(totalOccupants * fRule.value) : 0
-      )
       if (narrow < required) {
-        const c = cite(aRule)
-        const reasonFactor = fRule && totalOccupants * fRule.value > aRule.value
         push({
           severity: 'error',
           ruleId:   reasonFactor ? 'aisleCapacityFactor' : 'aisleMinWidth',
@@ -146,11 +151,31 @@ export function runFireMarshal(project, layoutId, activeIds, data) {
           jurisdictionId:   c.id,
           jurisdictionName: c.name,
           code:    c.code,
-          message: reasonFactor
-            ? `Aisle is ${formatInches(narrow)}; ${totalOccupants} occupants × ${fRule.value} in/occ = ${formatInches(Math.ceil(totalOccupants * fRule.value))} required.`
-            : `Aisle is ${formatInches(narrow)}; minimum is ${formatInches(required)}.`,
+          message: buildMsg(narrow),
           anchor:   { x: a.x + a.w / 2, y: a.y + a.h / 2 },
           objectId: a.id,
+        })
+      }
+    }
+
+    // Auto-aisles configured per seating zone (zone.aisles.width). These
+    // aren't standalone objects, so anchor on the zone's centroid.
+    for (const z of seatingZones) {
+      const auto = z.aisles?.count ?? (z.centerAisle?.enabled === false ? 0 : 1)
+      const wAuto = Math.max(0, z.aisles?.width ?? z.centerAisle?.width ?? 144)
+      if (auto > 0 && wAuto < required) {
+        const cx = z.vertices.reduce((s, v) => s + v[0], 0) / z.vertices.length
+        const cy = z.vertices.reduce((s, v) => s + v[1], 0) / z.vertices.length
+        push({
+          severity: 'error',
+          ruleId:   reasonFactor ? 'aisleCapacityFactor' : 'aisleMinWidth',
+          ruleLabel: 'Auto-aisle width',
+          jurisdictionId:   c.id,
+          jurisdictionName: c.name,
+          code:    c.code,
+          message: buildMsg(wAuto),
+          anchor:   { x: cx, y: cy },
+          objectId: z.id,
         })
       }
     }

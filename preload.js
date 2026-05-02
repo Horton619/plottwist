@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld('plottwist', {
   openProjectDialog:  ()             => ipcRenderer.invoke('open-project-dialog'),
   saveProjectDialog:  (defaultName)  => ipcRenderer.invoke('save-project-dialog', defaultName),
   openImageDialog:    ()             => ipcRenderer.invoke('open-image-dialog'),
-  exportImageDialog:  (defaultName)  => ipcRenderer.invoke('export-image-dialog', defaultName),
+  exportImageDialog:  (defaultName, kind)  => ipcRenderer.invoke('export-image-dialog', defaultName, kind),
 
   // File system
   readFile:           (filePath)              => ipcRenderer.invoke('read-file', filePath),

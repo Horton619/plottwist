@@ -159,8 +159,11 @@ export function distToSegment([px, py], [ax, ay], [bx, by]) {
 }
 
 // Point-in-polygon — delegated to renderer/geom.js so solver and renderer
-// can never disagree on edge-case behavior.
-export { pointInPolygon } from '../geom.js'
+// can never disagree on edge-case behavior. Import locally so callers
+// inside this module (itemTouchesAny, etc.) can reach the symbol; re-export
+// for solver files that consume it through './geom.js'.
+import { pointInPolygon } from '../geom.js'
+export { pointInPolygon }
 
 // Convert an obstruction object (rect or polygon) to a world-space polygon.
 export function obstructionToWorldPolygon(o) {

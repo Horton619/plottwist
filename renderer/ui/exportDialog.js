@@ -239,13 +239,13 @@ async function doExport(kind) {
 
     if (kind === 'png') {
       const blob = await rasterize(svg, paper.w, paper.h, cfg.dpi)
-      const dlg  = await window.plottwist.exportImageDialog(`${baseName}.png`)
+      const dlg  = await window.plottwist.exportImageDialog(`${baseName}.png`, 'png')
       if (dlg.canceled) { setStatus(''); busy = false; render(); return }
       const buf = await blob.arrayBuffer()
       await window.plottwist.writeBinaryFile(dlg.filePath, arrayBufferToBase64(buf))
       setStatus('PNG saved.', false)
     } else {
-      const dlg = await window.plottwist.exportImageDialog(`${baseName}.pdf`)
+      const dlg = await window.plottwist.exportImageDialog(`${baseName}.pdf`, 'pdf')
       if (dlg.canceled) { setStatus(''); busy = false; render(); return }
       const res = await window.plottwist.exportPdf({
         svg, paperW: paper.w, paperH: paper.h, savePath: dlg.filePath,
