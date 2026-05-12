@@ -3,7 +3,7 @@
 
 import { state, mutateProject, setState, uid, activeRoom } from '../state.js'
 import { rerenderTools } from '../canvas.js'
-import { STYLE_DEFAULTS } from './polygonTool.js'
+import { STYLE_DEFAULTS, getLabelDefaults } from './polygonTool.js'
 import { getSetting } from '../settings.js'
 
 // Object types that live in the active layout instead of the room.
@@ -80,6 +80,8 @@ function defaultSeatingZoneFields() {
     chairD:       20,
     aisles:       { count: 1, width: getSetting('defaultAisleWidth') },
     result:       null,
+    seatCountLabel:  { ...getLabelDefaults() },
+    tableNumbering:  { show: false, corner: 'tl', direction: 'h' },
     ...STYLE_DEFAULTS.theater,
     // Settings overrides — pull live values from preferences when creating
     // a new zone so the user's defaults take effect immediately.

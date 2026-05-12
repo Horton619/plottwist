@@ -15,6 +15,13 @@
     </div>
   </header>
 
+  <!-- Update-ready banner — populated by app.js when autoUpdater emits 'downloaded'. -->
+  <div id="update-ready-banner" class="update-ready-banner" hidden>
+    <span class="update-ready-text"></span>
+    <button class="update-ready-restart" data-action="install">Restart now</button>
+    <button class="update-ready-dismiss" data-action="dismiss" title="Dismiss — staged update applies on next quit">✕</button>
+  </div>
+
   <div class="app-grid">
     <aside class="pane sidebar-pane">
       <div id="sidebar" class="sidebar-host"></div>

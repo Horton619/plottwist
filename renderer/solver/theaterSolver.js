@@ -1,7 +1,7 @@
 // Theater solver — scan-line row fit. Single style, straight rows for v1.
 // Pattern dispatch lives here so 'chevron' / 'curved' can plug in later.
 
-import { bbox, intoLocalFrame, worldToLocal, localToWorld, horizontalSpans, subtractRanges, computeAislePositions, fitUnits, obstructionToWorldPolygon, itemTouchesAny } from './geom.js'
+import { bbox, intoLocalFrame, worldToLocal, localToWorld, horizontalSpans, subtractRanges, computeAislePositions, fitUnits, tagObstructions, itemTouchesAny } from './geom.js'
 
 const PATTERNS = {
   straight: solveStraight,
@@ -54,9 +54,7 @@ function solveStraight(zone, opts) {
   // we can do a simple point-in-polygon filter on the placed seats AFTER the
   // row math runs. No section-splitting, no justify shifting; chairs that fall
   // inside the obstruction just get dropped.
-  const obstructionWorldPolys = ((opts && opts.obstructions) || [])
-    .map(obstructionToWorldPolygon)
-    .filter(Boolean)
+  const obstructionWorldPolys = tagObstructions((opts && opts.obstructions) || [])
 
   const rowH      = Math.max(8, zone.rowSpacing || 20)
   const chairW    = Math.max(8, zone.chairW || 18)

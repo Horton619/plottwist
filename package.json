@@ -1,6 +1,6 @@
 {
   "name": "plottwist",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Seating layout calculator and visualizer for live event planning — Visual Entropy Productions",
   "main": "main.js",
   "homepage": "https://veproductions.net",
@@ -57,14 +57,14 @@
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
-        }
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
       ],
-      "identity": null
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements":        "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": { "teamId": "L5KZ5KGKXC" }
     },
     "dmg": {
       "background": "build/dmg-bg.png",

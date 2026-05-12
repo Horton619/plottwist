@@ -18,6 +18,7 @@ import { state, activeRoom, activeLayout, styleFor } from './state.js'
 import { escapeAttr, escapeText } from './strings.js'
 import { formatDimLength } from './units.js'
 import { BRAND, ANNOT } from './colors.js'
+import { clusterSeatsByProximity } from './solver/geom.js'
 
 // ── Public API ────────────────────────────────────────────────────────────
 
@@ -230,7 +231,75 @@ function serializeSeatingZone(o) {
   // Tables first (under chairs).
   for (const t of (o.result?.tables || [])) out.push(serializeTable(t))
   for (const c of (o.result?.seats  || [])) out.push(serializeChair(c))
+  // Seat-count labels on top — same logic as the canvas overlay.
+  out.push(serializeSeatCountLabels(o))
   return out.join('')
+}
+
+function serializeSeatCountLabels(o) {
+  const label = o.seatCountLabel
+  if (!label || label.show === false) return ''
+  if (!o.result?.seats?.length) return ''
+  const out = []
+  const isRoundsTableMode = o.style === 'rounds' && o.tableNumbering?.show && o.result.tables?.length
+  if (isRoundsTableMode) {
+    const ordered = orderTablesForExportNumbering(o.result.tables, o.tableNumbering)
+    ordered.forEach((t, i) => out.push(chipSVG(t.x, t.y, String(i + 1), label)))
+    return out.join('')
+  }
+  let threshold
+  if (o.style === 'rounds') threshold = ((o.tableSpacing || 60) + (o.tableD || 72)) * 0.9
+  else                      threshold = (o.rowSpacing   || 40) * 1.4
+  const clusters = clusterSeatsByProximity(o.result.seats, threshold)
+  for (const c of clusters) {
+    if (c.length < 2) continue
+    let sx = 0, sy = 0
+    for (const s of c) { sx += s.x; sy += s.y }
+    out.push(chipSVG(sx / c.length, sy / c.length, String(c.length), label))
+  }
+  return out.join('')
+}
+
+function chipSVG(cx, cy, text, label) {
+  const fs = Math.max(8, label.fontSize || 24)
+  const fill = label.fill || '#070910'
+  const textColor = label.textColor || '#FF2D9D'
+  const padX = fs * 0.6, padY = fs * 0.3
+  const w = text.length * fs * 0.65 + padX * 2
+  const h = fs + padY * 2
+  return `<g transform="translate(${cx - w / 2} ${cy - h / 2})">
+    <rect x="0" y="0" width="${w}" height="${h}" rx="${h * 0.25}" fill="${fill}" opacity="0.9"/>
+    <text x="${w / 2}" y="${h / 2}" text-anchor="middle" dominant-baseline="central" font-size="${fs}" font-family="system-ui, sans-serif" font-weight="700" fill="${textColor}">${escapeText(text)}</text>
+  </g>`
+}
+
+// Mirror of the canvas ordering helper. Kept duplicated rather than imported
+// because canvas.js is renderer-side; exportLayout shares serialization only.
+function orderTablesForExportNumbering(tables, opts) {
+  if (!tables.length) return []
+  const corner    = opts.corner    || 'tl'
+  const direction = opts.direction || 'h'
+  const startTop  = corner === 'tl' || corner === 'tr'
+  const startLeft = corner === 'tl' || corner === 'bl'
+  const primary   = direction === 'h' ? 'y' : 'x'
+  const secondary = direction === 'h' ? 'x' : 'y'
+  const items = tables.map(t => ({ x: t.x, y: t.y, ref: t }))
+  const sortedByPrimary = [...items].sort((a, b) => a[primary] - b[primary])
+  const bucketSize = Math.max(...tables.map(t => (t.w || t.d || 60))) * 0.6
+  const lanes = []
+  for (const it of sortedByPrimary) {
+    const last = lanes[lanes.length - 1]
+    if (last && Math.abs(it[primary] - last[0][primary]) <= bucketSize) last.push(it)
+    else lanes.push([it])
+  }
+  if (direction === 'h' ? !startTop : !startLeft) lanes.reverse()
+  const firstReversed = direction === 'h' ? !startLeft : !startTop
+  return lanes.flatMap((lane, idx) => {
+    lane.sort((a, b) => a[secondary] - b[secondary])
+    const reverse = (idx % 2 === 0) ? firstReversed : !firstReversed
+    if (reverse) lane.reverse()
+    return lane.map(it => it.ref)
+  })
 }
 
 function serializeTable(table) {

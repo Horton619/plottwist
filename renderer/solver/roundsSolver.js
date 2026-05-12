@@ -18,7 +18,7 @@ import {
   horizontalSpans, subtractRanges, computeAislePositions,
   computeShiftedRoundAislePositions, fitUnits,
   distToSegment, pointInPolygon,
-  obstructionToWorldPolygon, itemTouchesAny,
+  tagObstructions, itemTouchesAny,
 } from './geom.js'
 
 export function solveRounds(zone, opts = {}) {
@@ -237,9 +237,7 @@ export function solveRounds(zone, opts = {}) {
   // ── Obstruction filter ─────────────────────────────────────────────────
   // Atomic table-units: a table goes if any of its chair corners or its own
   // chair circumference touches the obstruction.
-  const obstructionWorldPolys = ((opts && opts.obstructions) || [])
-    .map(obstructionToWorldPolygon)
-    .filter(Boolean)
+  const obstructionWorldPolys = tagObstructions((opts && opts.obstructions) || [])
 
   let finalTables = tables
   let finalSeats  = seats
@@ -296,9 +294,11 @@ function circleFitsInPolygon(cx, cy, radius, vertices) {
 // Returns true if EITHER the polygon's vertices fall inside the circle OR
 // the circle's center is inside the polygon OR any polygon edge passes
 // within `radius` of the center.
-function circleHitsAnyPolygon(cx, cy, radius, polys) {
-  for (const poly of polys) {
-    if (pointInPolygon(cx, cy, poly)) return true
+function circleHitsAnyPolygon(cx, cy, radius, obstructions) {
+  for (const ob of obstructions) {
+    const poly = ob.poly
+    // 'edge' mode (walls): only edges count — polygon interior is decorative.
+    if (ob.mode !== 'edge' && pointInPolygon(cx, cy, poly)) return true
     for (const [vx, vy] of poly) {
       if (Math.hypot(vx - cx, vy - cy) <= radius) return true
     }

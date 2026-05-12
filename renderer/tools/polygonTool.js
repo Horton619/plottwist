@@ -75,9 +75,27 @@ function defaultSeatingZone() {
     chairD:       20,
     aisles:       { count: 1, width: 144 },        // 1 = single center aisle (12' default)
     result:       null,
+    // Seat-count label config — session-default values from getLabelDefaults().
+    seatCountLabel:  { ...getLabelDefaults() },
+    // Rounds-only: number each table individually with a serpentine ordering.
+    // Ignored for theater/classroom/mixed.
+    tableNumbering:  { show: false, corner: 'tl', direction: 'h' },
     ...STYLE_DEFAULTS.theater,
   }
 }
+
+// Session-default seat-count label style. When the user edits a zone's
+// label fields in Object Info, those values become the new session
+// defaults so subsequent zones inherit the look. Not persisted across
+// sessions — fresh launch resets.
+let SESSION_LABEL_DEFAULTS = {
+  show:      true,
+  fill:      '#070910',
+  textColor: '#FF2D9D',
+  fontSize:  24,
+}
+export function getLabelDefaults()       { return { ...SESSION_LABEL_DEFAULTS } }
+export function setLabelDefaults(patch)  { SESSION_LABEL_DEFAULTS = { ...SESSION_LABEL_DEFAULTS, ...patch } }
 
 // Style-specific defaults. Applied when the zone is first created and when
 // the user picks a new style in the Object Info panel (only fields they

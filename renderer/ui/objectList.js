@@ -14,6 +14,7 @@ export function initObjectList(host) {
         <button class="header-btn" data-action="add-image" title="Insert image (⌘⇧I)">Import Image</button>
       </div>
       <div class="layers-list" data-list></div>
+      <div class="layers-total" data-total></div>
     </div>
   `
   host.querySelector('[data-action="add-image"]').addEventListener('click', () => {
@@ -54,6 +55,17 @@ export function initObjectList(host) {
         list.appendChild(buildRow(room.objects[i], i, 'venue', room))
       }
     }
+
+    // Running seat total across every visible seating zone in the active layout.
+    const totalEl = host.querySelector('[data-total]')
+    if (totalEl) {
+      const total = (layout?.objects || [])
+        .filter(o => o.type === 'seating' && !o.hidden && o.result?.totalSeats)
+        .reduce((sum, o) => sum + o.result.totalSeats, 0)
+      totalEl.innerHTML = total > 0
+        ? `<span class="layers-total-key">Total seats</span><span class="layers-total-val">${total}</span>`
+        : ''
+    }
   }
 
   function sectionHeader(label) {
@@ -90,7 +102,7 @@ export function initObjectList(host) {
       <button class="layer-toggle vis ${o.hidden ? 'off' : 'on'}" data-action="toggle-hidden" title="${o.hidden ? 'Show' : 'Hide'}">${o.hidden ? ICON.eyeClosed : ICON.eyeOpen}</button>
       <button class="layer-toggle lk  ${o.locked ? 'on' : 'off'}" data-action="toggle-locked" title="${o.locked ? 'Unlock' : 'Lock'}">${o.locked ? ICON.lockClosed : ICON.lockOpen}</button>
       <span class="layer-swatch" style="background:${swatchColor}"></span>
-      <span class="layer-name" title="Double-click to rename">${escapeHtml(objectName(o, container))}</span>
+      <span class="layer-name" title="Double-click to rename">${escapeHtml(objectName(o, container))}${o.type === 'seating' && o.result?.totalSeats ? ` <span class="layer-count">(${o.result.totalSeats})</span>` : ''}</span>
       <span class="layer-type">${typeLabel}</span>
     `
 
@@ -118,7 +130,7 @@ export function initObjectList(host) {
     const nameEl = row.querySelector('.layer-name')
     nameEl.addEventListener('dblclick', (e) => {
       e.stopPropagation()
-      const next = prompt('Layer name', objectName(o, room))
+      const next = prompt('Layer name', objectName(o, container))
       if (next != null && next.trim()) {
         mutateProject(() => { o.name = next.trim() })
       }

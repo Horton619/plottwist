@@ -197,16 +197,90 @@ export function placedItemCorners(item) {
   ])
 }
 
-// Conservative test: does ANY corner of the placed item fall inside ANY of
-// the given polygons? Used to drop chairs/tables that overlap obstructions.
-export function itemTouchesAny(item, polys) {
+// Standard segment-segment intersection (proper crossing, not just collinear
+// touch). Used for wall edge-only obstruction tests.
+export function segmentsIntersect(a, b, c, d) {
+  const ccw = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+  const d1 = ccw(c, d, a), d2 = ccw(c, d, b)
+  const d3 = ccw(a, b, c), d4 = ccw(a, b, d)
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+}
+
+// Obstruction test: does the placed item touch ANY of the given obstructions?
+// Each obstruction is a tagged shape:
+//   { poly, mode: 'fill' } — block if any chair CORNER is inside the polygon
+//                            (used for solid obstructions: pillars, stages, tech)
+//   { poly, mode: 'edge' } — block if any chair EDGE crosses a polygon EDGE
+//                            (used for walls — the user draws the wall outline;
+//                            the polygon interior is decorative/sqft only, the
+//                            stroke is the physical wall material)
+export function itemTouchesAny(item, obstructions) {
   const corners = placedItemCorners(item)
-  for (const poly of polys) {
-    for (const [x, y] of corners) {
-      if (pointInPolygon(x, y, poly)) return true
+  for (const ob of obstructions) {
+    if (ob.mode === 'edge') {
+      // Chair edge × wall edge intersection. Each loop is closed (n→0).
+      const wn = ob.poly.length
+      for (let i = 0; i < 4; i++) {
+        const c1 = corners[i], c2 = corners[(i + 1) % 4]
+        for (let j = 0; j < wn; j++) {
+          if (segmentsIntersect(c1, c2, ob.poly[j], ob.poly[(j + 1) % wn])) return true
+        }
+      }
+    } else {
+      for (const [x, y] of corners) {
+        if (pointInPolygon(x, y, ob.poly)) return true
+      }
     }
   }
   return false
+}
+
+// Cluster seats by proximity using connected-components. Two seats join the
+// same cluster if their centers are within `threshold` inches of each other.
+// Returns an array of clusters, each an array of seat references.
+//
+// Used to draw one seat-count label per visually-distinct group of chairs.
+// Pick a threshold larger than rowSpacing (so adjacent rows cluster together)
+// but smaller than the narrowest expected aisle (so cross-aisle chairs split).
+// A good default is rowSpacing × 1.4.
+export function clusterSeatsByProximity(seats, threshold) {
+  const n = seats.length
+  if (n === 0) return []
+  // Union-find.
+  const parent = new Array(n).fill(0).map((_, i) => i)
+  const find  = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x] } return x }
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb }
+  // O(n²). Fine for layouts up to a few thousand seats; revisit with a grid
+  // index if a real-world deck blows past that.
+  const t2 = threshold * threshold
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx = seats[i].x - seats[j].x, dy = seats[i].y - seats[j].y
+      if (dx * dx + dy * dy <= t2) union(i, j)
+    }
+  }
+  const buckets = new Map()
+  for (let i = 0; i < n; i++) {
+    const r = find(i)
+    if (!buckets.has(r)) buckets.set(r, [])
+    buckets.get(r).push(seats[i])
+  }
+  return [...buckets.values()]
+}
+
+// Tag a list of raw obstruction objects (from room.objects) with the
+// blocking mode the solver should use. Walls block at their stroke;
+// everything else blocks solid. Drops null polygon results (e.g. malformed
+// shapes) silently.
+export function tagObstructions(rawList) {
+  const out = []
+  for (const o of rawList) {
+    const poly = obstructionToWorldPolygon(o)
+    if (!poly) continue
+    out.push({ poly, mode: o.type === 'walls' ? 'edge' : 'fill' })
+  }
+  return out
 }
 
 // Convert a row's (xCenter, yCenter) in the rotated frame back to world coords.

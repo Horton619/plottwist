@@ -6,15 +6,15 @@ import { formatInches, formatSqFt, parseInches } from '../units.js'
 import { unionShapes, subtractShapes, intersectShapes, mergedType } from '../shapeOps.js'
 import { startCalibration } from '../canvas.js'
 import { solveSeatingZone } from '../solver/index.js'
-import { STYLE_DEFAULTS, TABLE_PRESETS, ROUND_PRESETS, MIXED_TABLE_PRESETS } from '../tools/polygonTool.js'
+import { STYLE_DEFAULTS, TABLE_PRESETS, ROUND_PRESETS, MIXED_TABLE_PRESETS, setLabelDefaults } from '../tools/polygonTool.js'
 import { getSetting } from '../settings.js'
 import { escapeAttr } from '../strings.js'
 
 // Coordinate display helpers — show X/Y relative to the project origin so
 // users can read positions from their chosen reference point. Internal
 // storage stays in world coords; we only translate at the input boundary.
-function originX() { return state.project.origin?.x || 0 }
-function originY() { return state.project.origin?.y || 0 }
+function originX() { return activeRoom()?.origin?.x || 0 }
+function originY() { return activeRoom()?.origin?.y || 0 }
 function formatCoord(value, axis) {
   return formatInches(value - (axis === 'x' ? originX() : originY()))
 }
@@ -42,6 +42,9 @@ export function initObjectInfo(host) {
     }
     if (sel.length > 1) {
       const totalArea = sel.reduce((a, o) => a + objectArea(o), 0)
+      // Combined seat math — only includes solved seating zones in the selection.
+      const seated = sel.filter(o => o.type === 'seating' && o.result?.totalSeats)
+      const combinedSeats = seated.reduce((a, o) => a + o.result.totalSeats, 0)
       // Boolean ops mutate venue (room) shapes only. If any selected object
       // lives in a layout (aisle, seating zone, etc.) we hide the buttons
       // rather than risk leaving zombie objects in layout.objects.
@@ -59,6 +62,10 @@ export function initObjectInfo(host) {
         <div class="panel-section">
           <div class="panel-title">${sel.length} objects selected</div>
           <div class="prop-row"><span class="prop-key">Total area</span><span class="prop-val">${formatSqFt(totalArea)}</span></div>
+          ${seated.length >= 2 ? `
+            <div class="prop-row"><span class="prop-key">Combined seats</span><span class="prop-val accent">${combinedSeats}</span></div>
+            <p class="panel-hint">${seated.map(o => `${escapeAttr(objectName(o, room))}: ${o.result.totalSeats}`).join(' + ')}</p>
+          ` : ''}
         </div>
         ${joinable ? `
           <div class="panel-section">
@@ -74,6 +81,7 @@ export function initObjectInfo(host) {
             <p class="panel-hint warn">Boolean ops only run on venue shapes. Layout objects (aisles, seating) can't be merged.</p>
           </div>
         ` : ''}
+        ${reflectSection(room, sel.length)}
       `
       const joinBtn      = panel.querySelector('[data-action="join"]')
       const subtractBtn  = panel.querySelector('[data-action="subtract"]')
@@ -81,6 +89,8 @@ export function initObjectInfo(host) {
       if (joinBtn)      joinBtn.addEventListener('click',     () => applyBoolean('Join',      unionShapes))
       if (subtractBtn)  subtractBtn.addEventListener('click', () => applyBoolean('Subtract',  subtractShapes))
       if (intersectBtn) intersectBtn.addEventListener('click',() => applyBoolean('Intersect', intersectShapes))
+      const reflectBtn = panel.querySelector('[data-action="reflect"]')
+      if (reflectBtn) reflectBtn.addEventListener('click', () => applyReflect())
       return
     }
 
@@ -168,6 +178,7 @@ export function initObjectInfo(host) {
           </div>
         </div>
       ` : ''}
+      ${reflectSection(room, 1)}
     `
 
     // Wire inputs
@@ -253,6 +264,8 @@ export function initObjectInfo(host) {
     if (scaleBtn) {
       scaleBtn.addEventListener('click', () => startCalibration(o.id))
     }
+    const reflectBtn = panel.querySelector('[data-action="reflect"]')
+    if (reflectBtn) reflectBtn.addEventListener('click', () => applyReflect())
     if (o.type === 'seating') wireSeatingControls(panel, o)
   }
 }
@@ -330,6 +343,57 @@ function renderSeatingControls(o) {
           <button class="ghost-btn small" data-action="clear-solve">Clear</button>
         </div>
       ` : '<p class="panel-hint">Drop a Seating zone, pick a style, hit Solve.</p>'}
+    </div>
+    ${renderSeatLabelControls(o)}
+    ${o.style === 'rounds' ? renderTableNumberingControls(o) : ''}
+  `
+}
+
+function renderSeatLabelControls(o) {
+  const lbl = o.seatCountLabel || { show: true, fill: '#070910', textColor: '#FF2D9D', fontSize: 24 }
+  return `
+    <div class="panel-section">
+      <div class="panel-section-title">Seat Count Label</div>
+      <div class="prop-row"><span class="prop-key">Show</span>
+        <input type="checkbox" data-zone-label="show" ${lbl.show !== false ? 'checked' : ''}>
+      </div>
+      <div class="prop-row"><span class="prop-key">Background</span>
+        <input type="color" class="color-input" data-zone-label="fill" value="${lbl.fill || '#070910'}">
+      </div>
+      <div class="prop-row"><span class="prop-key">Text</span>
+        <input type="color" class="color-input" data-zone-label="textColor" value="${lbl.textColor || '#FF2D9D'}">
+      </div>
+      <div class="prop-row"><span class="prop-key">Size</span>
+        <input type="number" class="num-input" data-zone-label="fontSize" min="8" max="120" step="2" value="${lbl.fontSize || 24}">
+      </div>
+      <p class="panel-hint">One label per chair cluster (chairs separated by an aisle). Edits here become the default for new zones in this session.</p>
+    </div>
+  `
+}
+
+function renderTableNumberingControls(o) {
+  const tn = o.tableNumbering || { show: false, corner: 'tl', direction: 'h' }
+  return `
+    <div class="panel-section">
+      <div class="panel-section-title">Table Numbering</div>
+      <div class="prop-row"><span class="prop-key">Show</span>
+        <input type="checkbox" data-zone-tnum="show" ${tn.show ? 'checked' : ''}>
+      </div>
+      <div class="prop-row"><span class="prop-key">Start corner</span>
+        <select class="select-input" data-zone-tnum="corner" ${tn.show ? '' : 'disabled'}>
+          <option value="tl" ${tn.corner === 'tl' ? 'selected' : ''}>Top-left</option>
+          <option value="tr" ${tn.corner === 'tr' ? 'selected' : ''}>Top-right</option>
+          <option value="bl" ${tn.corner === 'bl' ? 'selected' : ''}>Bottom-left</option>
+          <option value="br" ${tn.corner === 'br' ? 'selected' : ''}>Bottom-right</option>
+        </select>
+      </div>
+      <div class="prop-row"><span class="prop-key">Direction</span>
+        <select class="select-input" data-zone-tnum="direction" ${tn.show ? '' : 'disabled'}>
+          <option value="h" ${tn.direction === 'h' ? 'selected' : ''}>Rows (serpentine)</option>
+          <option value="v" ${tn.direction === 'v' ? 'selected' : ''}>Columns (serpentine)</option>
+        </select>
+      </div>
+      <p class="panel-hint">When on, each round table gets a per-table number instead of a cluster total.</p>
     </div>
   `
 }
@@ -603,6 +667,36 @@ function wireSeatingControls(panel, o) {
     })
   })
 
+  // Seat-count label fields. Edits also become the session default for
+  // newly-created zones so the user can theme once and have it stick.
+  panel.querySelectorAll('[data-zone-label]').forEach(inp => {
+    const field = inp.dataset.zoneLabel
+    inp.addEventListener('change', () => {
+      mutateProject(() => {
+        if (!o.seatCountLabel) o.seatCountLabel = { show: true, fill: '#070910', textColor: '#FF2D9D', fontSize: 24 }
+        if (field === 'show')           o.seatCountLabel.show     = inp.checked
+        else if (field === 'fill')      o.seatCountLabel.fill     = inp.value
+        else if (field === 'textColor') o.seatCountLabel.textColor = inp.value
+        else if (field === 'fontSize')  o.seatCountLabel.fontSize = parseInt(inp.value, 10) || 24
+      })
+      // Propagate to session defaults so the next zone inherits this look.
+      setLabelDefaults({ [field]: field === 'show' ? inp.checked : (field === 'fontSize' ? parseInt(inp.value, 10) || 24 : inp.value) })
+    })
+  })
+
+  // Rounds-only: table-numbering toggle + corner/direction.
+  panel.querySelectorAll('[data-zone-tnum]').forEach(inp => {
+    const field = inp.dataset.zoneTnum
+    inp.addEventListener('change', () => {
+      mutateProject(() => {
+        if (!o.tableNumbering) o.tableNumbering = { show: false, corner: 'tl', direction: 'h' }
+        if (field === 'show')           o.tableNumbering.show      = inp.checked
+        else if (field === 'corner')    o.tableNumbering.corner    = inp.value
+        else if (field === 'direction') o.tableNumbering.direction = inp.value
+      })
+    })
+  })
+
   const solveBtn = panel.querySelector('[data-action="solve"]')
   if (solveBtn) solveBtn.addEventListener('click', () => {
     // Sibling aisle objects in the active layout become real cuts the solver
@@ -611,11 +705,11 @@ function wireSeatingControls(panel, o) {
     const room   = activeRoom()
     const userAisles = (layout?.objects || [])
       .filter(a => a.type === 'aisle' && a.kind === 'rect' && !a.hidden)
-    // Venue-level objects that physically block seating: obstructions
-    // (pillars), stages (chairs can't sit on the stage), and tech tables
-    // (back-of-house gear). Floors and walls are skipped — floors are just
-    // the area boundary; walls live outside the seated region.
-    const BLOCKING = new Set(['obstruction', 'stage', 'tech'])
+    // Venue-level objects that physically block seating: walls (the room
+    // shell, including pillars jutting in), obstructions (free-standing
+    // columns), stages, and tech tables. Floors are skipped — floors are
+    // just the area boundary, not a physical structure.
+    const BLOCKING = new Set(['walls', 'obstruction', 'stage', 'tech'])
     const obstructions = (room?.objects || [])
       .filter(o2 => BLOCKING.has(o2.type) && !o2.hidden)
     const res = solveSeatingZone(o, { userAisles, obstructions })
@@ -679,4 +773,82 @@ function applyBoolean(opLabel, opFn) {
     })
   })
   setState({ selection: [newId] })
+}
+
+// ── Reflect over centerline ───────────────────────────────────────────────
+// Duplicates the selected objects mirrored across the active room's
+// centerline. Solver-zone results are wiped so the user re-solves on the
+// mirrored zone (which may now sit against different obstructions).
+
+function reflectSection(room, count) {
+  const cl = room?.centerline
+  const enabled = cl && cl.enabled
+  if (!enabled) {
+    return `
+      <div class="panel-section">
+        <div class="panel-section-title">Reflect</div>
+        <p class="panel-hint">Enable a centerline for this room (Settings → Workspace) to mirror objects across it.</p>
+      </div>
+    `
+  }
+  const label = count > 1 ? `Reflect ${count} objects` : 'Reflect over centerline'
+  return `
+    <div class="panel-section">
+      <div class="panel-section-title">Reflect</div>
+      <button class="block-btn" data-action="reflect">${label}</button>
+      <p class="panel-hint">Mirrors a copy of the selection across the room's centerline (x = ${formatInches(cl.x)}).</p>
+    </div>
+  `
+}
+
+function applyReflect() {
+  const sel = selectedObjects()
+  if (sel.length === 0) return
+  const room = activeRoom()
+  const cl = room?.centerline
+  if (!cl || !cl.enabled) return
+  const cx = cl.x
+  const newIds = []
+  mutateProject(p => {
+    const r = p.rooms.find(rm => rm.id === state.activeRoomId)
+    if (!r) return
+    const layout = (r.layouts || []).find(l => l.id === state.activeLayoutId)
+    for (const o of sel) {
+      // Find which array the original lives in so the mirror lands beside it.
+      const inRoom = r.objects.includes(o)
+      const container = inRoom ? r.objects : layout?.objects
+      if (!container) continue
+      const mirror = reflectObjectAcrossX(o, cx)
+      if (!mirror) continue
+      mirror.id = uid('obj')
+      newIds.push(mirror.id)
+      container.push(mirror)
+    }
+  })
+  if (newIds.length) setState({ selection: newIds })
+}
+
+function reflectObjectAcrossX(o, cx) {
+  const copy = JSON.parse(JSON.stringify(o))
+  if (copy.kind === 'rect' || copy.kind === 'image') {
+    copy.x = 2 * cx - (copy.x + copy.w)
+    return copy
+  }
+  if (copy.kind === 'polygon') {
+    copy.vertices = copy.vertices.map(([x, y]) => [2 * cx - x, y])
+    // Seating zones have directional fields that need their sign flipped so
+    // the mirrored zone faces the right way and chevrons slant correctly.
+    if (copy.type === 'seating') {
+      if (copy.rotation     != null) copy.rotation     = -copy.rotation
+      if (copy.chevronAngle != null) copy.chevronAngle = -copy.chevronAngle
+      copy.result = null                 // re-solve against the mirrored polygon's obstructions
+    }
+    return copy
+  }
+  if (copy.kind === 'dim') {
+    copy.x1 = 2 * cx - copy.x1
+    copy.x2 = 2 * cx - copy.x2
+    return copy
+  }
+  return null
 }

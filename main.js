@@ -111,8 +111,46 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow()
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+  wireAutoUpdater()
 })
+
+// ── Auto-updater ──────────────────────────────────────────────────────────
+// Forwards every electron-updater event to the renderer on a single channel
+// ('update-status'). The renderer subscribes once and paints state from
+// there — no per-event IPC sprawl. Pattern adopted from FlowCast v1.0.7
+// after the silent-failure bug in 1.0.4 — make the state visible.
+
+function sendUpdateStatus(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-status', payload)
+  }
+}
+
+function wireAutoUpdater() {
+  autoUpdater.autoDownload         = false   // ask the user first
+  autoUpdater.autoInstallOnAppQuit = true    // staged update applies on quit if user dismisses
+
+  autoUpdater.on('checking-for-update',  ()    => sendUpdateStatus({ type: 'checking' }))
+  autoUpdater.on('update-available',     (i)   => sendUpdateStatus({ type: 'available', version: i.version }))
+  autoUpdater.on('update-not-available', ()    => sendUpdateStatus({ type: 'not-available', version: app.getVersion() }))
+  autoUpdater.on('download-progress',    (p)   => sendUpdateStatus({
+    type: 'progress',
+    percent:         p.percent,
+    bytesPerSecond:  p.bytesPerSecond,
+    transferred:     p.transferred,
+    total:           p.total,
+  }))
+  autoUpdater.on('update-downloaded',    (i)   => sendUpdateStatus({ type: 'downloaded', version: i.version }))
+  autoUpdater.on('error',                (err) => sendUpdateStatus({ type: 'error', message: err?.message || String(err) }))
+
+  // Launch-time check — packaged builds only. Delay 60s so the GitHub
+  // releases atom feed has time to refresh (it caches several minutes).
+  if (app.isPackaged) {
+    setTimeout(() => autoUpdater.checkForUpdates().catch(err => {
+      sendUpdateStatus({ type: 'error', message: err?.message || String(err) })
+    }), 60_000)
+  }
+}
 
 app.on('window-all-closed', () => {
   app.quit()
@@ -141,6 +179,9 @@ ipcMain.handle('open-external', async (_event, url) => {
   try { await shell.openExternal(url); return true } catch { return false }
 })
 
+// Manual "Check now" entry point. Returns a one-shot result for the UI to
+// display immediately, but the renderer also receives the full event stream
+// via 'update-status' so progress/downloaded/error states paint live.
 ipcMain.handle('check-for-updates', async () => {
   try {
     const result = await autoUpdater.checkForUpdates()
@@ -150,6 +191,20 @@ ipcMain.handle('check-for-updates', async () => {
   } catch (err) {
     return { ok: false, error: err.message }
   }
+})
+
+// User said yes to "download the update?" — kick off the download. Progress
+// + completion arrive via the 'update-status' event stream.
+ipcMain.handle('download-update', async () => {
+  try { await autoUpdater.downloadUpdate(); return { ok: true } }
+  catch (err) { return { ok: false, error: err?.message || String(err) } }
+})
+
+// User clicked "Restart now" in the banner. Squirrel.Mac swaps the .app
+// and relaunches as the new version.
+ipcMain.handle('install-update', () => {
+  // setImmediate gives the IPC ack time to flush before we quit.
+  setImmediate(() => autoUpdater.quitAndInstall())
 })
 
 ipcMain.handle('open-project-dialog', async () => {

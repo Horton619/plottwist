@@ -5,7 +5,7 @@
 //
 // Pattern dispatch lives here so 'chevron' / 'curved' can plug in later.
 
-import { bbox, intoLocalFrame, worldToLocal, localToWorld, horizontalSpans, subtractRanges, computeAislePositions, fitUnits, obstructionToWorldPolygon, itemTouchesAny } from './geom.js'
+import { bbox, intoLocalFrame, worldToLocal, localToWorld, horizontalSpans, subtractRanges, computeAislePositions, fitUnits, tagObstructions, itemTouchesAny } from './geom.js'
 
 const PATTERNS = {
   straight: solveStraight,
@@ -49,9 +49,7 @@ function solveStraight(zone, opts) {
 
   // Obstructions — collected as world polygons for a post-place point-in-poly
   // filter. Tables AND chairs whose centers fall inside get dropped.
-  const obstructionWorldPolys = ((opts && opts.obstructions) || [])
-    .map(obstructionToWorldPolygon)
-    .filter(Boolean)
+  const obstructionWorldPolys = tagObstructions((opts && opts.obstructions) || [])
 
   const rowH       = Math.max(24, zone.rowSpacing || 54)
   const tableW     = Math.max(24, zone.tableW || 96)        // long dimension (parallel to stage)

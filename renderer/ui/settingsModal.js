@@ -4,7 +4,7 @@
 //   • Defaults   — nudge amounts + per-style solver defaults + auto-save / undo
 //   • Updates    — current version + manual GitHub release check
 
-import { state, setState, mutateProject, subscribe } from '../state.js'
+import { state, setState, mutateProject, subscribe, activeRoom } from '../state.js'
 import { getSetting, setSetting, resetAllSettings, SETTINGS_DEFAULTS, onSettingsChange } from '../settings.js'
 import { formatInches, parseInches } from '../units.js'
 import { checkForUpdates, compareVersions } from '../updater.js'
@@ -108,15 +108,16 @@ function renderTab(id) {
 // ── Tab: Workspace ────────────────────────────────────────────────────────
 
 function renderWorkspaceTab() {
-  const project = state.project
-  const origin  = project.origin || { x: 0, y: 0 }
-  const cl      = project.centerline || { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+  const room    = activeRoom()
+  const origin  = room?.origin     || { x: 0, y: 0 }
+  const cl      = room?.centerline || { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+  const roomName = room?.name || '(no room)'
 
   const root = document.createElement('div')
   root.className = 'settings-form'
   root.innerHTML = `
-    <h3>Origin</h3>
-    <p class="settings-hint">All X/Y coordinates display relative to the origin. Set it to a known reference point (a stage corner, room center, etc.) so layouts read in meaningful units.</p>
+    <h3>Origin <span class="settings-room-tag">${escape(roomName)}</span></h3>
+    <p class="settings-hint">Origin and centerline are per-room — pick the active room in the sidebar to edit a different one. All X/Y coordinates display relative to the origin. Set it to a known reference point (a stage corner, room center, etc.).</p>
     <div class="settings-row"><span class="settings-key">Origin X</span>
       <input class="prop-input" data-origin="x" value="${formatInches(origin.x || 0)}">
     </div>
@@ -169,29 +170,34 @@ function renderWorkspaceTab() {
     </div>
   `
 
-  // Live origin / centerline writes into project.
+  // Live origin / centerline writes into the active room.
+  const withActiveRoom = (fn) => mutateProject(p => {
+    const rm = p.rooms.find(r => r.id === state.activeRoomId)
+    if (!rm) return
+    fn(rm)
+  })
   root.querySelectorAll('[data-origin]').forEach(inp => {
     const axis = inp.dataset.origin
     inp.addEventListener('change', () => {
       const v = parseInches(inp.value)
       if (v == null) return
-      mutateProject(p => {
-        if (!p.origin) p.origin = { x: 0, y: 0 }
-        p.origin[axis] = v
+      withActiveRoom(rm => {
+        if (!rm.origin) rm.origin = { x: 0, y: 0 }
+        rm.origin[axis] = v
       })
     })
   })
   root.querySelectorAll('[data-centerline]').forEach(inp => {
     const field = inp.dataset.centerline
     inp.addEventListener('change', () => {
-      mutateProject(p => {
-        if (!p.centerline) p.centerline = { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
-        if (field === 'enabled')   p.centerline.enabled = inp.checked
-        else if (field === 'color') p.centerline.color  = inp.value
-        else if (field === 'thickness') p.centerline.thickness = parseFloat(inp.value)
+      withActiveRoom(rm => {
+        if (!rm.centerline) rm.centerline = { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+        if (field === 'enabled')   rm.centerline.enabled = inp.checked
+        else if (field === 'color') rm.centerline.color  = inp.value
+        else if (field === 'thickness') rm.centerline.thickness = parseFloat(inp.value)
         else if (field === 'x') {
           const v = parseInches(inp.value)
-          if (v != null) p.centerline.x = v
+          if (v != null) rm.centerline.x = v
         }
       })
     })
@@ -207,7 +213,7 @@ function renderWorkspaceTab() {
     closeSettings()
   })
   root.querySelector('[data-action="reset-origin"]').addEventListener('click', () => {
-    mutateProject(p => { p.origin = { x: 0, y: 0 } })
+    withActiveRoom(rm => { rm.origin = { x: 0, y: 0 } })
   })
 
   wireSettingInputs(root)
@@ -333,30 +339,90 @@ function renderUpdatesTab() {
     <div class="settings-row settings-actions">
       <button class="block-btn small" data-action="check-updates">Check for updates now</button>
     </div>
+    <div class="settings-update-status" data-update-line></div>
+    <div class="settings-update-progress" data-update-progress hidden>
+      <div class="settings-update-progress-bar"><span data-bar-fill></span></div>
+      <div class="settings-update-progress-text" data-bar-text></div>
+    </div>
     <div class="settings-row update-status" data-status></div>
   `
   wireSettingInputs(root)
+  // Listen to the autoUpdater event stream forwarded by the main process.
+  // Paints the line + progress bar live; banner is shown by app.js.
+  const lineEl     = root.querySelector('[data-update-line]')
+  const progressEl = root.querySelector('[data-update-progress]')
+  const barFillEl  = root.querySelector('[data-bar-fill]')
+  const barTextEl  = root.querySelector('[data-bar-text]')
+  const paint = (s) => {
+    if (!s) return
+    progressEl.hidden = !(s.type === 'available' || s.type === 'progress' || s.type === 'downloaded')
+    if (s.type === 'checking')        lineEl.textContent = 'Checking GitHub Releases…'
+    else if (s.type === 'not-available') lineEl.textContent = 'You have the latest version.'
+    else if (s.type === 'available') {
+      lineEl.innerHTML = `<span class="accent">Update available: v${escape(s.version)} — downloading…</span>`
+      barFillEl.style.width = '0%'; barTextEl.textContent = 'Starting…'
+    }
+    else if (s.type === 'progress') {
+      barFillEl.style.width = `${Math.min(100, Math.max(0, s.percent || 0))}%`
+      barTextEl.textContent = formatProgress(s)
+    }
+    else if (s.type === 'downloaded') {
+      lineEl.innerHTML = `<span class="accent">v${escape(s.version)} ready — see banner above.</span>`
+      barFillEl.style.width = '100%'; barTextEl.textContent = 'Download complete'
+    }
+    else if (s.type === 'error') {
+      lineEl.innerHTML = `<span class="warn">Update error: ${escape(s.message)}</span>`
+    }
+  }
+  // Repaint immediately with whatever the last state was (modal may open mid-flight).
+  if (typeof window !== 'undefined' && window.__plottwistUpdateStatus) paint(window.__plottwistUpdateStatus)
+  const onStatus = (e) => paint(e.detail)
+  window.addEventListener('plottwist:update-status', onStatus)
+  // Update the global cache so future modal opens see latest.
+  window.addEventListener('plottwist:update-status', (e) => { window.__plottwistUpdateStatus = e.detail })
+
   root.querySelector('[data-action="check-updates"]').addEventListener('click', async () => {
     const status = root.querySelector('[data-status]')
     status.textContent = 'Checking…'
+    // Trigger the real auto-updater check too — it'll stream events through paint().
+    if (window.plottwist?.checkForUpdates) window.plottwist.checkForUpdates().catch(() => {})
+    // And the renderer-side GitHub REST fallback for the "View release" link,
+    // since the main-process path doesn't expose a release URL.
     const res = await checkForUpdates(currentVersion)
     if (!res.ok) {
       status.innerHTML = `<span class="warn">Couldn't reach GitHub: ${escape(res.error)}</span>`
       return
     }
     if (res.isNewer) {
-      // Escape every field that comes from the GitHub API response.
       status.innerHTML = `<span class="accent">Update available: ${escape(res.latest)}</span>
-        <button class="block-btn small" data-action="open-release">View release</button>`
+        <button class="block-btn small" data-action="open-release">View release</button>
+        <button class="block-btn small" data-action="download-now">Download &amp; install</button>`
       status.querySelector('[data-action="open-release"]').addEventListener('click', () => {
         if (window.plottwist?.openExternal) window.plottwist.openExternal(res.url)
         else window.open(res.url, '_blank')
+      })
+      status.querySelector('[data-action="download-now"]').addEventListener('click', () => {
+        window.plottwist?.downloadUpdate?.()
       })
     } else {
       status.textContent = `You're on the latest release (${res.latest}).`
     }
   })
   return root
+}
+
+function formatProgress(s) {
+  const pct  = Math.round(s.percent || 0)
+  const mb   = (n) => (n / 1024 / 1024).toFixed(1) + ' MB'
+  const speed = (s.bytesPerSecond > 1024 * 1024)
+    ? `${(s.bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`
+    : `${Math.round(s.bytesPerSecond / 1024)} KB/s`
+  const etaSec = s.bytesPerSecond > 0 ? Math.max(0, (s.total - s.transferred) / s.bytesPerSecond) : 0
+  const eta = etaSec < 60 ? `~${Math.round(etaSec)}s left`
+            : `~${Math.floor(etaSec / 60)}m ${Math.round(etaSec % 60)}s left`
+  const parts = [`${pct}%`, `${mb(s.transferred)} / ${mb(s.total)}`, speed]
+  if (s.bytesPerSecond > 0) parts.push(eta)
+  return parts.join('  ·  ')
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

@@ -28,8 +28,20 @@ window.addEventListener('DOMContentLoaded', () => {
     state.activeLayoutId = layoutId
   }
   // Initialize per-project workspace fields if missing.
-  if (!state.project.origin)     state.project.origin = { x: 0, y: 0 }
-  if (!state.project.centerline) state.project.centerline = { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+  // Origin and centerline used to live at the project level; they now live
+  // per-room. Migrate any older project objects forward.
+  if (state.project.origin || state.project.centerline) {
+    for (const room of state.project.rooms || []) {
+      if (!room.origin)     room.origin     = state.project.origin     || { x: 0, y: 0 }
+      if (!room.centerline) room.centerline = state.project.centerline || { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+    }
+    delete state.project.origin
+    delete state.project.centerline
+  }
+  for (const room of state.project.rooms || []) {
+    if (!room.origin)     room.origin     = { x: 0, y: 0 }
+    if (!room.centerline) room.centerline = { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+  }
 
   initToolbar(document.getElementById('toolbar'))
   initProjectSidebar(document.getElementById('sidebar'))
@@ -51,7 +63,43 @@ window.addEventListener('DOMContentLoaded', () => {
   bindPickModeBanner()
   bindAutoSave()
   runLaunchUpdateCheck()
+  bindAutoUpdater()
 })
+
+// ── Auto-updater (electron-updater) ───────────────────────────────────────
+// Main process forwards every event on a single 'update-status' channel.
+// We do two things with it:
+//   • show the top-of-window "Restart now" banner when state hits 'downloaded'
+//   • re-broadcast as a CustomEvent so the Settings → Updates tab can paint
+//     live progress without coupling to this module directly
+let latestUpdateStatus = { type: 'idle' }
+export function getLatestUpdateStatus() { return latestUpdateStatus }
+
+function bindAutoUpdater() {
+  if (!window.plottwist?.onUpdateStatus) return
+  window.plottwist.onUpdateStatus((payload) => {
+    latestUpdateStatus = payload
+    window.dispatchEvent(new CustomEvent('plottwist:update-status', { detail: payload }))
+    if (payload.type === 'downloaded') showUpdateReadyBanner(payload.version)
+  })
+  // Banner buttons — wired once.
+  const banner = document.getElementById('update-ready-banner')
+  if (!banner) return
+  banner.querySelector('[data-action="install"]').addEventListener('click', () => {
+    window.plottwist?.installUpdate?.()
+  })
+  banner.querySelector('[data-action="dismiss"]').addEventListener('click', () => {
+    banner.hidden = true
+  })
+}
+
+function showUpdateReadyBanner(version) {
+  const banner = document.getElementById('update-ready-banner')
+  if (!banner) return
+  const text = banner.querySelector('.update-ready-text')
+  if (text) text.textContent = `PlotTwist v${version} is ready. Restart to finish updating.`
+  banner.hidden = false
+}
 
 // Auto-save: timer fires every `autoSaveInterval` minutes (when > 0). Only
 // saves when the project is dirty AND has a file path (Untitled projects are
@@ -287,9 +335,12 @@ function newProject() {
   const roomId = uid('room')
   const layoutId = uid('layout')
   state.project = {
-    rooms: [{ id: roomId, name: 'Room 1', objects: [], layouts: [{ id: layoutId, name: 'Layout 1', hidden: false, locked: false, objects: [] }] }],
-    origin:     { x: 0, y: 0 },
-    centerline: { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 },
+    rooms: [{
+      id: roomId, name: 'Room 1', objects: [],
+      origin:     { x: 0, y: 0 },
+      centerline: { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 },
+      layouts: [{ id: layoutId, name: 'Layout 1', hidden: false, locked: false, objects: [] }],
+    }],
     fireCode:   { jurisdictions: [] },
   }
   state.activeRoomId = roomId
@@ -333,11 +384,18 @@ async function openProject() {
         }
       }
     }
+    // Migrate project-level origin/centerline (older files) onto each room.
+    // Newer files already carry these on the room and the project-level
+    // fields will be absent.
+    const projOrigin = data.origin
+    const projCenter = data.centerline
+    for (const room of data.rooms) {
+      if (!room.origin)     room.origin     = projOrigin ?? { x: 0, y: 0 }
+      if (!room.centerline) room.centerline = projCenter ?? { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+    }
     state.project = {
       rooms: data.rooms,
-      origin:     data.origin     ?? { x: 0, y: 0 },
-      centerline: data.centerline ?? { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 },
-      fireCode:   data.fireCode   ?? { jurisdictions: [] },
+      fireCode: data.fireCode ?? { jurisdictions: [] },
     }
     state.activeRoomId = data.rooms[0] ? data.rooms[0].id : null
     state.activeLayoutId = data.rooms[0]?.layouts?.[0]?.id ?? null
@@ -585,11 +643,9 @@ async function saveProject(forceDialog) {
     path = res.filePath
   }
   const data = JSON.stringify({
-    version: 1,
-    rooms:      state.project.rooms,
-    origin:     state.project.origin,
-    centerline: state.project.centerline,
-    fireCode:   state.project.fireCode,    // active jurisdictions live with the venue
+    version:  2,                          // v2 = origin + centerline are per-room
+    rooms:    state.project.rooms,        // each room carries its own origin + centerline
+    fireCode: state.project.fireCode,     // active jurisdictions live with the venue
   }, null, 2)
   try {
     await window.plottwist.writeFile(path, data)

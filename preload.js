@@ -33,5 +33,11 @@ contextBridge.exposeInMainWorld('plottwist', {
   // App / updates
   getAppVersion:   () => ipcRenderer.invoke('get-app-version'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate:  () => ipcRenderer.invoke('download-update'),
+  installUpdate:   () => ipcRenderer.invoke('install-update'),
+  // Streams every electron-updater state transition (checking / available /
+  // progress / downloaded / error) on a single channel. Callback receives
+  // a payload object with a `type` field plus event-specific fields.
+  onUpdateStatus:  (cb) => ipcRenderer.on('update-status', (_e, payload) => cb(payload)),
   openExternal:    (url) => ipcRenderer.invoke('open-external', url),
 })

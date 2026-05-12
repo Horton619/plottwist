@@ -1,0 +1,59 @@
+# PlotTwist release pipeline.
+#
+# Trigger: push a tag matching v*.*.* (e.g. `git tag v0.2.0 && git push --tags`).
+# Output: a GitHub Release with mac-arm64 DMG + ZIP and win-x64 NSIS installer,
+# plus electron-updater manifests (latest-mac.yml / latest.yml).
+#
+# Mac build: real Developer ID signing + notarization via electron-builder
+# in one step. Requires the five VEP-wide repo secrets (CSC_LINK,
+# CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID).
+# Windows build: unsigned for now — fine for internal distribution.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-mac:
+    name: Build & publish (mac arm64)
+    runs-on: macos-14   # arm64 runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build, sign, notarize, publish
+        env:
+          GH_TOKEN:                    ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK:                    ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD:            ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID:                    ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID:               ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac --publish always
+
+  build-win:
+    name: Build & publish (win x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build & publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always

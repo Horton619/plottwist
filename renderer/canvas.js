@@ -9,7 +9,7 @@ import { startRectDraw,    updateRectDraw,    endRectDraw }    from './tools/rec
 import { startPolygonDraw, addPolygonVertex,  cancelPolygonDraw, finishPolygonDraw } from './tools/polygonTool.js'
 import { startSelectDrag,  updateSelectDrag,  endSelectDrag }  from './tools/selectTool.js'
 import { startDimDraw,     updateDimDraw,     endDimDraw }     from './tools/dimTool.js'
-import { computeAislePositions, computeShiftedRoundAislePositions } from './solver/geom.js'
+import { computeAislePositions, computeShiftedRoundAislePositions, clusterSeatsByProximity } from './solver/geom.js'
 import { getSetting, onSettingsChange } from './settings.js'
 import { computeMoveSnap, computeDragPointSnap } from './snapEngine.js'
 import { BRAND, ANNOT } from './colors.js'
@@ -174,21 +174,26 @@ function onPointerDown(e) {
     return
   }
 
-  // Origin / centerline pick modes — set the chosen project field, exit mode.
+  // Origin / centerline pick modes — write to the active room (origin and
+  // centerline are per-room as of v2 .ptwist files).
   if (state.pickMode === 'origin') {
     mutateProject(p => {
-      if (!p.origin) p.origin = { x: 0, y: 0 }
-      p.origin.x = Math.round(w.x)
-      p.origin.y = Math.round(w.y)
+      const room = p.rooms.find(r => r.id === state.activeRoomId)
+      if (!room) return
+      if (!room.origin) room.origin = { x: 0, y: 0 }
+      room.origin.x = Math.round(w.x)
+      room.origin.y = Math.round(w.y)
     })
     setState({ pickMode: null })
     return
   }
   if (state.pickMode === 'centerline') {
     mutateProject(p => {
-      if (!p.centerline) p.centerline = { enabled: true, x: 0, color: BRAND.centerline, thickness: 1.5 }
-      p.centerline.enabled = true
-      p.centerline.x = Math.round(w.x)
+      const room = p.rooms.find(r => r.id === state.activeRoomId)
+      if (!room) return
+      if (!room.centerline) room.centerline = { enabled: true, x: 0, color: BRAND.centerline, thickness: 1.5 }
+      room.centerline.enabled = true
+      room.centerline.x = Math.round(w.x)
     })
     setState({ pickMode: null })
     return
@@ -578,8 +583,9 @@ function renderGuides() {
   const v = state.viewport
   const yTop = v.y, yBot = v.y + v.h, xLeft = v.x, xRight = v.x + v.w
 
-  // Centerline (project-level vertical guide).
-  const cl = state.project.centerline
+  // Centerline + origin live on the room — each room can have its own.
+  const room = activeRoom()
+  const cl = room?.centerline
   if (cl && cl.enabled) {
     const line = document.createElementNS(SVG_NS, 'line')
     line.setAttribute('x1', cl.x); line.setAttribute('y1', yTop)
@@ -596,7 +602,7 @@ function renderGuides() {
   }
 
   // Origin marker — small crosshair + 0,0 label.
-  const origin = state.project.origin
+  const origin = room?.origin
   if (origin) {
     const r = pxToWorldDist(8)
     const cross = document.createElementNS(SVG_NS, 'path')
@@ -778,6 +784,10 @@ function renderObject(o) {
       if (o.result?.seats) {
         for (const seat of o.result.seats) g.appendChild(buildChair(seat))
       }
+      // Seat-count labels — one per visually-distinct cluster of chairs
+      // (chairs separated by an aisle become separate clusters).
+      const labelGroup = buildSeatCountLabels(o)
+      if (labelGroup) g.appendChild(labelGroup)
       el = g
     } else {
       el = document.createElementNS(SVG_NS, o.vertices.length >= 3 ? 'polygon' : 'polyline')
@@ -1194,6 +1204,120 @@ function buildFacingArrow(zone) {
   path.setAttribute('opacity', 0.75)
   g.appendChild(path)
   return g
+}
+
+// Seat-count label overlay. One label per visually-distinct cluster of chairs.
+// Drawn at the cluster's centroid as a filled chip with the seat count. The
+// chip is non-interactive (pointer-events: none) so clicks pass through to
+// the seating zone underneath.
+//
+// Rounds zones in table-numbering mode get a per-table label instead (placed
+// at the table center), numbered serpentine from a chosen corner.
+function buildSeatCountLabels(zone) {
+  const label = zone.seatCountLabel
+  if (!label || label.show === false) return null
+  const result = zone.result
+  if (!result?.seats?.length) return null
+
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('class', 'plot-seat-count')
+  g.setAttribute('pointer-events', 'none')
+
+  // Rounds with table-numbering: per-table labels.
+  const isRoundsTableMode = zone.style === 'rounds' && zone.tableNumbering?.show && result.tables?.length
+  if (isRoundsTableMode) {
+    const numbered = orderTablesForNumbering(result.tables, zone.tableNumbering || {})
+    numbered.forEach((t, i) => g.appendChild(buildLabelChip(t.x, t.y, String(i + 1), label)))
+    return g
+  }
+
+  // Theater / classroom / mixed (and rounds without table mode):
+  // cluster chairs by proximity and label each cluster.
+  // Threshold sized off the zone's row spacing so adjacent rows cluster but
+  // chairs across a typical aisle don't. Rounds use the table spacing.
+  let threshold
+  if (zone.style === 'rounds') {
+    threshold = ((zone.tableSpacing || 60) + (zone.tableD || 72)) * 0.9
+  } else {
+    const rs = zone.rowSpacing || 40
+    threshold = rs * 1.4
+  }
+  const clusters = clusterSeatsByProximity(result.seats, threshold)
+  // Suppress labels for clusters of 1 — usually a stray chair, noisy.
+  for (const c of clusters) {
+    if (c.length < 2) continue
+    let sx = 0, sy = 0
+    for (const s of c) { sx += s.x; sy += s.y }
+    g.appendChild(buildLabelChip(sx / c.length, sy / c.length, String(c.length), label))
+  }
+  return g
+}
+
+function buildLabelChip(cx, cy, text, label) {
+  const fontSize  = Math.max(8, label.fontSize || 24)
+  const fill      = label.fill      || '#070910'
+  const textColor = label.textColor || '#FF2D9D'
+  const padX = fontSize * 0.6
+  const padY = fontSize * 0.3
+  // Rough text width — monospace assumption, decent for 1–4 digit counts.
+  const w = text.length * fontSize * 0.65 + padX * 2
+  const h = fontSize + padY * 2
+  const g = document.createElementNS(SVG_NS, 'g')
+  g.setAttribute('transform', `translate(${cx - w / 2} ${cy - h / 2})`)
+  const rect = document.createElementNS(SVG_NS, 'rect')
+  rect.setAttribute('x', 0); rect.setAttribute('y', 0)
+  rect.setAttribute('width', w); rect.setAttribute('height', h)
+  rect.setAttribute('rx', h * 0.25)
+  rect.setAttribute('fill', fill)
+  rect.setAttribute('opacity', 0.9)
+  g.appendChild(rect)
+  const t = document.createElementNS(SVG_NS, 'text')
+  t.setAttribute('x', w / 2); t.setAttribute('y', h / 2)
+  t.setAttribute('text-anchor', 'middle')
+  t.setAttribute('dominant-baseline', 'central')
+  t.setAttribute('font-size', fontSize)
+  t.setAttribute('font-family', 'system-ui, sans-serif')
+  t.setAttribute('font-weight', '700')
+  t.setAttribute('fill', textColor)
+  t.textContent = text
+  g.appendChild(t)
+  return g
+}
+
+// Order tables for serpentine numbering. Group tables into rows by Y bucket
+// (within half-tableD of each other), then sort each row by X. Pick the
+// starting corner from `corner` and the primary axis from `direction`.
+// 'h' = serpentine across rows; 'v' = serpentine down columns.
+function orderTablesForNumbering(tables, opts) {
+  if (!tables.length) return []
+  const corner    = opts.corner    || 'tl'
+  const direction = opts.direction || 'h'
+  const startTop   = corner === 'tl' || corner === 'tr'
+  const startLeft  = corner === 'tl' || corner === 'bl'
+
+  // Bucket by Y for 'h', by X for 'v'.
+  const primary   = direction === 'h' ? 'y' : 'x'
+  const secondary = direction === 'h' ? 'x' : 'y'
+  const items = tables.map(t => ({ x: t.x, y: t.y, ref: t }))
+  const sortedByPrimary = [...items].sort((a, b) => a[primary] - b[primary])
+  const bucketSize = Math.max(...tables.map(t => (t.w || t.d || 60))) * 0.6
+  const lanes = []
+  for (const it of sortedByPrimary) {
+    const last = lanes[lanes.length - 1]
+    if (last && Math.abs(it[primary] - last[0][primary]) <= bucketSize) last.push(it)
+    else lanes.push([it])
+  }
+  // Lane order: top→bottom (or left→right) unless start corner says otherwise.
+  if (direction === 'h' ? !startTop : !startLeft) lanes.reverse()
+  // Within each lane, sort by secondary; flip every other lane (serpentine).
+  // Honor start corner: first lane's secondary direction matches the corner.
+  const firstReversed = direction === 'h' ? !startLeft : !startTop
+  return lanes.flatMap((lane, idx) => {
+    lane.sort((a, b) => a[secondary] - b[secondary])
+    const reverse = (idx % 2 === 0) ? firstReversed : !firstReversed
+    if (reverse) lane.reverse()
+    return lane.map(it => it.ref)
+  })
 }
 
 function renderHandles() {
