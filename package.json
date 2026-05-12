@@ -1,6 +1,6 @@
 {
   "name": "plottwist",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Seating layout calculator and visualizer for live event planning — Visual Entropy Productions",
   "main": "main.js",
   "homepage": "https://veproductions.net",
@@ -55,7 +55,6 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "build/icon.icns",
       "target": [
         { "target": "dmg", "arch": ["arm64"] },
         { "target": "zip", "arch": ["arm64"] }
@@ -67,42 +66,24 @@
       "notarize": { "teamId": "L5KZ5KGKXC" }
     },
     "dmg": {
-      "background": "build/dmg-bg.png",
       "iconSize": 100,
       "window": {
         "width": 540,
         "height": 380
       },
       "contents": [
-        {
-          "x": 175,
-          "y": 245,
-          "type": "file"
-        },
-        {
-          "x": 385,
-          "y": 245,
-          "type": "link",
-          "path": "/Applications"
-        }
+        { "x": 175, "y": 245, "type": "file" },
+        { "x": 385, "y": 245, "type": "link", "path": "/Applications" }
       ]
     },
     "win": {
-      "icon": "build/icon.ico",
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
+        { "target": "nsis", "arch": ["x64"] }
       ]
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
