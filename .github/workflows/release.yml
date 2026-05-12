@@ -16,6 +16,12 @@ on:
     tags:
       - 'v*.*.*'
 
+# Default GITHUB_TOKEN permissions changed to read-only on new repos. Both
+# jobs need contents:write so electron-builder can create the release and
+# upload artifacts.
+permissions:
+  contents: write
+
 jobs:
   build-mac:
     name: Build & publish (mac arm64)
