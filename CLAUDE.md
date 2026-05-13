@@ -113,6 +113,16 @@ the trade-off without new information wastes a turn.
   event in on a single `update-status` channel (`checking` / `available`
   / `progress` / `downloaded` / `error`) — don't add per-event IPC.
   `autoDownload = false`, `autoInstallOnAppQuit = true`.
+- **Shift = aggressive snap, NOT bypass.** Earlier code had shift bypass
+  snap entirely; that was reversed. Shift now triples the snap tolerance
+  and adds an extra 1.5× pull to the room's vertical centerline for any
+  midpoint or center anchor on the dragged shape. True bypass = toggle
+  off in Settings → Workspace → Snap.
+- **Polygon edge midpoint handle drags the edge perpendicular**, not
+  inserts a vertex. Vertex insertion lives on right-click-on-edge
+  (discoverable) and Alt+click on the mid-edge handle (power-user
+  shortcut, same code path as the old behavior). Right-click on a
+  vertex deletes it.
 
 ---
 

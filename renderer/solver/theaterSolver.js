@@ -65,7 +65,10 @@ function solveStraight(zone, opts) {
   // Chevron — rotates the OUTERMOST sections inward. Each chevron'd row is
   // a continuous angled line of chairs, NOT a rotation of the whole section.
   const chevron      = !!zone.chevron
-  const chevronAngle = Math.max(0, Math.min(45, zone.chevronAngle ?? 15))
+  // Clamp to [-45, 45]. Negative = chevron slants AWAY from the stage
+  // (e.g. reflected-across-centerline zones get a negated chevronAngle so
+  // their outer ends still point toward the stage on the mirrored side).
+  const chevronAngle = Math.max(-45, Math.min(45, zone.chevronAngle ?? 15))
 
   // Read the new aisles config; fall back to legacy centerAisle for safety.
   const aisleCount = (zone.aisles?.count != null)
@@ -116,9 +119,18 @@ function solveStraight(zone, opts) {
     const userRanges = verticalAisles.flatMap(poly => horizontalSpans(poly, yCenter))
     const allRanges  = [...autoRanges, ...userRanges]
 
-    const cleanSpans = allRanges.length
+    let cleanSpans = allRanges.length
       ? subtractRanges(spans, allRanges)
       : spans.map(([x0, x1]) => ({ x0, x1, justify: 'center' }))
+
+    // Chevron with zero aisles: anchor every span at its LEFT edge so the
+    // row slants in a single direction (rightward + toward the stage with
+    // positive chevronAngle). User builds a symmetric V by drawing a second
+    // zone and reflecting it across the room's centerline. The isOuter
+    // check below also accepts single-span rows in this mode.
+    if (chevron && aisleCount === 0 && cleanSpans.length) {
+      cleanSpans = cleanSpans.map(s => ({ ...s, justify: 'left' }))
+    }
 
     const rowSeats = []
     let spanIdx = 0
@@ -134,12 +146,16 @@ function solveStraight(zone, opts) {
       }
       if (count <= 0) { spanIdx++; continue }
 
-      // Chevron applies only to OUTER sections (first/last span) when there
-      // are 2+ sections. Each chevron'd row is a continuous angled line that
-      // anchors at the aisle edge and walks outward at the chevron angle —
-      // chairs that walk past the section's outer x bound get dropped.
-      const isOuter = chevron && cleanSpans.length > 1
-                     && (spanIdx === 0 || spanIdx === cleanSpans.length - 1)
+      // Chevron applies to: (a) outer sections of a multi-span row (with
+      // aisles, the first/last spans flanking the aisles), and (b) every
+      // span when there are zero aisles (single-direction slope; user
+      // mirrors with Reflect to make a V). Chairs that walk past the
+      // section's outer x bound get dropped.
+      const isOuter = chevron && (
+        aisleCount === 0
+          ? true
+          : (cleanSpans.length > 1 && (spanIdx === 0 || spanIdx === cleanSpans.length - 1))
+      )
       // Sign convention: positive chevronAngle slants the row's outer end
       // TOWARD the stage (smaller y). Negative reverses it.
       const sectionAngle = isOuter

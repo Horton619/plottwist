@@ -11,7 +11,7 @@ import { rerenderTools } from '../canvas.js'
 // Object types that live in the active layout instead of the room.
 // Seating now defaults to rectangle drawing (see rectTool); polygon entry
 // for seating is reserved for future "advanced" use.
-const LAYOUT_TYPES = new Set(['aisle'])
+const LAYOUT_TYPES = new Set(['seating', 'aisle'])
 
 export function startPolygonDraw(point) {
   state.drawingPolygon = { vertices: [point], cursor: point, shiftSnap: false }
@@ -51,8 +51,9 @@ export function finishPolygonDraw(type = 'walls') {
       Object.assign(obj, defaultSeatingZone())
     }
     if (goesToLayout) {
-      const layout = (room.layouts || []).find(l => l.id === state.activeLayoutId)
-      if (!layout) return
+      const layouts = room.layouts || []
+      const layout  = layouts.find(l => l.id === state.activeLayoutId) || layouts[0]
+      if (!layout) { console.warn('polygonTool: no layout available for', type); return }
       layout.objects.push(obj)
     } else {
       room.objects.push(obj)

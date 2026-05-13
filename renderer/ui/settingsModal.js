@@ -110,7 +110,7 @@ function renderTab(id) {
 function renderWorkspaceTab() {
   const room    = activeRoom()
   const origin  = room?.origin     || { x: 0, y: 0 }
-  const cl      = room?.centerline || { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+  const cl      = room?.centerline || { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 }
   const roomName = room?.name || '(no room)'
 
   const root = document.createElement('div')
@@ -191,7 +191,7 @@ function renderWorkspaceTab() {
     const field = inp.dataset.centerline
     inp.addEventListener('change', () => {
       withActiveRoom(rm => {
-        if (!rm.centerline) rm.centerline = { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+        if (!rm.centerline) rm.centerline = { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 }
         if (field === 'enabled')   rm.centerline.enabled = inp.checked
         else if (field === 'color') rm.centerline.color  = inp.value
         else if (field === 'thickness') rm.centerline.thickness = parseFloat(inp.value)

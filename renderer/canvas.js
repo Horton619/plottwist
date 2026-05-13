@@ -11,7 +11,7 @@ import { startSelectDrag,  updateSelectDrag,  endSelectDrag }  from './tools/sel
 import { startDimDraw,     updateDimDraw,     endDimDraw }     from './tools/dimTool.js'
 import { computeAislePositions, computeShiftedRoundAislePositions, clusterSeatsByProximity } from './solver/geom.js'
 import { getSetting, onSettingsChange } from './settings.js'
-import { computeMoveSnap, computeDragPointSnap } from './snapEngine.js'
+import { computeMoveSnap, computeDragPointSnap, snapPointToAnchors } from './snapEngine.js'
 import { BRAND, ANNOT } from './colors.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -59,6 +59,11 @@ export function initCanvas(container) {
   window.addEventListener('resize',   render)
   window.addEventListener('keydown',  onSpaceDown)
   window.addEventListener('keyup',    onSpaceUp)
+  // Track alt-held state so .sel-midhandle can flip its cursor between
+  // "drag-resize" (default) and "copy" (alt = insert-vertex shortcut).
+  window.addEventListener('keydown', (e) => { if (e.altKey) document.body.classList.add('alt-held') })
+  window.addEventListener('keyup',   (e) => { if (!e.altKey) document.body.classList.remove('alt-held') })
+  window.addEventListener('blur',    () => document.body.classList.remove('alt-held'))
 
   subscribe(render)
   onSettingsChange(render)   // grid/snap/etc. updates trigger an immediate re-render
@@ -78,6 +83,19 @@ function screenToWorld(clientX, clientY) {
   const sy = (clientY - rect.top)  / rect.height
   const v  = state.viewport
   return { x: v.x + sx * v.w, y: v.y + sy * v.h }
+}
+
+// Pick a resize-arrow cursor based on edge direction (dx, dy). The cursor
+// points perpendicular to the edge — that's the direction the drag will
+// translate it. Quantizes the edge angle to the nearest 45° bucket so we
+// land on one of the four standard CSS resize cursors.
+function midEdgeCursor(dx, dy) {
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI
+  const a = ((ang % 180) + 180) % 180   // fold to [0, 180)
+  if (a < 22.5 || a >= 157.5) return 'ns-resize'   // horizontal-ish edge → vertical drag
+  if (a < 67.5)               return 'nwse-resize' // \  diagonal
+  if (a < 112.5)              return 'ew-resize'   // vertical-ish edge → horizontal drag
+                              return 'nesw-resize' // /  diagonal
 }
 
 function pxToWorldDist(px) {
@@ -209,8 +227,12 @@ function onPointerDown(e) {
       svg.setPointerCapture(e.pointerId)
       return
     }
-    // Mid-edge handle: insert a fresh vertex at the midpoint and immediately
-    // turn the gesture into a vertex-drag for that new vertex.
+    // Mid-edge handle. Default (bare click) drags the WHOLE edge perpendicular
+    // to itself, translating both endpoint vertices in lockstep — the way most
+    // shape editors handle "resize a side." Alt-modified turns the click into
+    // a vertex insert + drag (the older behavior), kept for power users who
+    // need to add a vertex from the same handle. Right-click on an edge is
+    // the discoverable "Insert vertex here" path.
     const midHandle = e.target.closest('[data-mid-edge]')
     if (midHandle) {
       const oid = midHandle.dataset.objectId
@@ -221,17 +243,36 @@ function onPointerDown(e) {
       if (obj && obj.kind === 'polygon') {
         const a = obj.vertices[edgeIdx]
         const b = obj.vertices[(edgeIdx + 1) % obj.vertices.length]
-        const mid = [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)]
-        const insertAt = edgeIdx + 1
-        // Transaction wraps both the vertex insert AND the subsequent drag —
-        // one undo step rolls back the inserted vertex and any motion.
-        beginTransaction()
-        mutateProject(() => { obj.vertices.splice(insertAt, 0, mid) })
-        drag = startSelectDrag('vertex', {
-          objectId:  oid,
-          vertexIdx: insertAt,
-          start:     w,
-        })
+        if (e.altKey) {
+          // Alt → insert vertex at edge midpoint, then drag that new vertex.
+          const mid = [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)]
+          const insertAt = edgeIdx + 1
+          beginTransaction()
+          mutateProject(() => { obj.vertices.splice(insertAt, 0, mid) })
+          drag = startSelectDrag('vertex', {
+            objectId:  oid,
+            vertexIdx: insertAt,
+            start:     w,
+          })
+        } else {
+          // Bare → translate the edge perpendicular to itself. Both endpoint
+          // vertices move by the same signed-perpendicular offset, so the
+          // adjacent edges deform but the dragged edge stays parallel to its
+          // original orientation. Snap applies to the midpoint.
+          const ex = b[0] - a[0], ey = b[1] - a[1]
+          const len = Math.hypot(ex, ey) || 1
+          // Unit normal (rotated 90° CCW from the edge direction). Sign is
+          // arbitrary; we project a signed delta so either direction works.
+          const nx = -ey / len, ny = ex / len
+          beginTransaction()
+          drag = startSelectDrag('edge', {
+            objectId:         oid,
+            edgeIdx,
+            normal:           [nx, ny],
+            originalVertices: obj.vertices.map(v => v.slice()),
+            start:            w,
+          })
+        }
         svg.setPointerCapture(e.pointerId)
       }
       return
@@ -372,13 +413,21 @@ function onPointerMove(e) {
     // Anchor snapping. Move drags pull the WHOLE selection by a delta; vertex
     // and resize drags snap the cursor itself, since the underlying math
     // already uses cursor deltas. Tolerance + on/off come from Settings.
+    //
+    // Shift no longer BYPASSES snap — it AMPLIFIES it. Hold shift for a 3×
+    // tolerance multiplier and stronger pull toward the room's centerline
+    // (especially when a midpoint is being dragged). True bypass = toggle
+    // off in Settings.
     let snappedWorld = w
-    if (!drag.shiftHeld && getSetting('snapEnabled')) {
-      const tol = pxToWorldDist(getSetting('snapTolerance'))
+    if (getSetting('snapEnabled')) {
+      const shiftMult = drag.shiftHeld ? 3 : 1
+      const tol = pxToWorldDist(getSetting('snapTolerance') * shiftMult)
+      const room = activeRoom()
+      const cl = (room?.centerline?.enabled) ? room.centerline : null
       if (drag.mode === 'move') {
         const dx = Math.round(w.x - drag.start.x)
         const dy = Math.round(w.y - drag.start.y)
-        const snap = computeMoveSnap(drag, dx, dy, tol)
+        const snap = computeMoveSnap(drag, dx, dy, tol, { centerline: cl, shiftHeld: drag.shiftHeld })
         if (snap) {
           state.snapIndicator = snap.indicator
           snappedWorld = { x: w.x + snap.offsetX, y: w.y + snap.offsetY }
@@ -399,6 +448,65 @@ function onPointerMove(e) {
     }
 
     updateSelectDrag(drag, snappedWorld)
+  } else if (drag.mode === 'edge') {
+    drag.shiftHeld = e.shiftKey
+    const [nx, ny] = drag.normal
+    // Project the cursor delta onto the edge normal — movement is constrained
+    // perpendicular to the original edge so the edge stays parallel.
+    let t = (w.x - drag.start.x) * nx + (w.y - drag.start.y) * ny
+
+    // Snap: try the proposed midpoint against world anchors. Apply any pull
+    // along the normal only (perpendicular drag stays locked).
+    state.snapIndicator = null
+    if (getSetting('snapEnabled')) {
+      const shiftMult = drag.shiftHeld ? 3 : 1
+      const tol = pxToWorldDist(getSetting('snapTolerance') * shiftMult)
+      const ov = drag.originalVertices
+      const i = drag.edgeIdx, n = ov.length
+      const oa = ov[i], ob = ov[(i + 1) % n]
+      const mx0 = (oa[0] + ob[0]) / 2, my0 = (oa[1] + ob[1]) / 2
+      const mx  = mx0 + t * nx,        my  = my0 + t * ny
+      const snap = snapPointToAnchors(mx, my, tol)
+      if (snap) {
+        const offsetT = (snap.x - mx) * nx + (snap.y - my) * ny
+        t += offsetT
+        state.snapIndicator = { x: snap.x, y: snap.y, kind: snap.kind }
+      }
+      // Centerline pull on the edge midpoint — same priority bump as move.
+      const room = activeRoom()
+      const cl = room?.centerline?.enabled ? room.centerline : null
+      if (cl) {
+        const mx2 = mx0 + t * nx
+        const clDist = Math.abs(mx2 - cl.x)
+        const clTol = tol * (drag.shiftHeld ? 1.5 : 1)
+        if (clDist < clTol) {
+          // How much t to add to land mx at cl.x: solve mx0 + (t+Δt)·nx = cl.x.
+          if (Math.abs(nx) > 1e-6) {
+            const targetT = (cl.x - mx0) / nx
+            // Only accept if the centerline target is closer than the current point.
+            const candMy = my0 + targetT * ny
+            if (Math.hypot(mx2 - cl.x, 0) < clTol) {
+              t = targetT
+              state.snapIndicator = { x: cl.x, y: candMy, kind: 'centerline' }
+            }
+          }
+        }
+      }
+    }
+
+    mutateProject(p => {
+      const room = p.rooms.find(r => r.id === state.activeRoomId)
+      if (!room) return
+      const layout = (room.layouts || []).find(l => l.id === state.activeLayoutId)
+      let obj = room.objects.find(o => o.id === drag.objectId)
+      if (!obj && layout) obj = layout.objects.find(o => o.id === drag.objectId)
+      if (!obj) return
+      const ov = drag.originalVertices
+      const i  = drag.edgeIdx, n = ov.length
+      const oa = ov[i], ob = ov[(i + 1) % n]
+      obj.vertices[i]           = [Math.round(oa[0] + t * nx), Math.round(oa[1] + t * ny)]
+      obj.vertices[(i + 1) % n] = [Math.round(ob[0] + t * nx), Math.round(ob[1] + t * ny)]
+    })
   }
 }
 
@@ -419,6 +527,9 @@ function onPointerUp(e) {
   } else if (drag.mode === 'move' || drag.mode === 'resize' || drag.mode === 'vertex') {
     endSelectDrag(drag)
     endTransaction()    // close the undo group; a no-op gesture leaves no history entry
+    state.snapIndicator = null
+  } else if (drag.mode === 'edge') {
+    endTransaction()
     state.snapIndicator = null
   }
   drag = null
@@ -1365,7 +1476,10 @@ function renderHandles() {
       outline.setAttribute('vector-effect', 'non-scaling-stroke')
       handleLayer.appendChild(outline)
 
-      // Mid-edge handles (rendered first so corner handles paint on top)
+      // Mid-edge handles (rendered first so corner handles paint on top).
+      // Cursor reflects what the drag will do: perpendicular-resize by default,
+      // 'copy' (plus) when alt is held (alt = insert vertex shortcut, see
+      // body.alt-held rule in styles.css).
       const midSize = hSize * 0.7
       o.vertices.forEach(([ax, ay], i) => {
         const [bx, by] = o.vertices[(i + 1) % o.vertices.length]
@@ -1375,6 +1489,7 @@ function renderHandles() {
         m.setAttribute('r', midSize / 2)
         m.setAttribute('class', 'sel-handle sel-midhandle')
         m.setAttribute('vector-effect', 'non-scaling-stroke')
+        m.style.cursor = midEdgeCursor(bx - ax, by - ay)
         m.dataset.objectId = o.id
         m.dataset.midEdge = i              // index of the edge whose midpoint this is
         handleLayer.appendChild(m)
@@ -1446,14 +1561,29 @@ function renderToolLayer() {
 
   // Snap indicator — cyan ring over the snap point (and a small cross for
   // visibility). Centers and midpoints get a slightly larger ring than corners.
+  // Centerline snaps get a vertical hairline instead so it's obvious WHICH
+  // alignment kicked in.
   const snap = state.snapIndicator
   if (snap) {
+    const stroke = snap.kind === 'centerline' ? BRAND.centerline : ANNOT.dim.canvas
+    if (snap.kind === 'centerline') {
+      const v = state.viewport
+      const line = document.createElementNS(SVG_NS, 'line')
+      line.setAttribute('x1', snap.x); line.setAttribute('y1', v.y)
+      line.setAttribute('x2', snap.x); line.setAttribute('y2', v.y + v.h)
+      line.setAttribute('stroke', stroke)
+      line.setAttribute('stroke-width', pxToWorldDist(1))
+      line.setAttribute('stroke-dasharray', '4 3')
+      line.setAttribute('vector-effect', 'non-scaling-stroke')
+      line.setAttribute('opacity', 0.85)
+      toolLayer.appendChild(line)
+    }
     const r = pxToWorldDist(snap.kind === 'corner' ? 5 : 6)
     const ring = document.createElementNS(SVG_NS, 'circle')
     ring.setAttribute('cx', snap.x); ring.setAttribute('cy', snap.y)
     ring.setAttribute('r', r)
     ring.setAttribute('fill', 'none')
-    ring.setAttribute('stroke', ANNOT.dim.canvas)
+    ring.setAttribute('stroke', stroke)
     ring.setAttribute('stroke-width', pxToWorldDist(1.5))
     ring.setAttribute('vector-effect', 'non-scaling-stroke')
     toolLayer.appendChild(ring)
@@ -1463,7 +1593,7 @@ function renderToolLayer() {
       `M ${snap.x - tick} ${snap.y} L ${snap.x + tick} ${snap.y} ` +
       `M ${snap.x} ${snap.y - tick} L ${snap.x} ${snap.y + tick}`
     )
-    cross.setAttribute('stroke', ANNOT.dim.canvas)
+    cross.setAttribute('stroke', stroke)
     cross.setAttribute('stroke-width', pxToWorldDist(1))
     cross.setAttribute('vector-effect', 'non-scaling-stroke')
     toolLayer.appendChild(cross)

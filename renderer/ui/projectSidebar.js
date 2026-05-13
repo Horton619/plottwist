@@ -23,7 +23,7 @@ export function initProjectSidebar(host) {
         name: `Room ${p.rooms.length + 1}`,
         objects: [],
         origin:     { x: 0, y: 0 },
-        centerline: { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 },
+        centerline: { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 },
         layouts: [{ id: layoutId, name: 'Layout 1', hidden: false, locked: false, objects: [] }],
       })
     })

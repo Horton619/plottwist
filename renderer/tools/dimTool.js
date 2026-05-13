@@ -60,7 +60,10 @@ export function endDimDraw() {
   mutateProject(p => {
     const room = p.rooms.find(r => r.id === state.activeRoomId)
     if (!room) return
-    room.objects.push({
+    const layouts = room.layouts || []
+    const layout  = layouts.find(l => l.id === state.activeLayoutId) || layouts[0]
+    if (!layout) { console.warn('dimTool: no layout available'); return }
+    layout.objects.push({
       id, kind: 'dim', type: 'dim',
       x1: dd.x1, y1: dd.y1, x2: dd.x2, y2: dd.y2,
     })

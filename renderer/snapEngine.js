@@ -221,15 +221,18 @@ export function computeDragPointSnap(drag, qx, qy, tolerance) {
 //   - drag: the current drag state (has .snapshot of original geometry)
 //   - dx, dy: the proposed delta from drag.start (already shift-locked if applicable)
 //   - tolerance: world-units distance within which to snap
+//   - opts.centerline: room.centerline (if enabled) — adds a "pull to vertical
+//                      centerline" effect for midpoint / center anchors.
+//   - opts.shiftHeld:  user is holding shift — bumps centerline tolerance 1.5×
+//                      on top of the already-tripled base tolerance.
 //
 // Returns { offsetX, offsetY, indicator: { x, y, kind } } or null.
-export function computeMoveSnap(drag, dx, dy, tolerance) {
+export function computeMoveSnap(drag, dx, dy, tolerance, opts = {}) {
   const sel = selectedObjects().filter(o => !o.hidden && !o.locked)
   if (!sel.length) return null
 
   const selIds = new Set(sel.map(o => o.id))
   const candidates = collectSnapAnchors(selIds)
-  if (!candidates.length) return null
 
   // Dragged anchors at the proposed offset position.
   const draggedAnchors = []
@@ -241,9 +244,32 @@ export function computeMoveSnap(drag, dx, dy, tolerance) {
   }
   if (!draggedAnchors.length) return null
 
-  // Closest pair within tolerance wins.
   let best = null
   let bestDist = tolerance
+
+  // Centerline pull — vertical line at room.centerline.x. Only midpoint and
+  // center anchors on the dragged shape are eligible (snapping a stray corner
+  // to the centerline rarely helps; snapping the SHAPE'S MIDPOINT is the
+  // common workflow). Distance counted only in the X direction. Shift gives
+  // the centerline an extra 1.5× pull radius.
+  const cl = opts.centerline
+  if (cl) {
+    const clTol = tolerance * (opts.shiftHeld ? 1.5 : 1)
+    for (const a of draggedAnchors) {
+      if (a.kind !== 'midpoint' && a.kind !== 'center') continue
+      const distX = Math.abs(a.x - cl.x)
+      if (distX < clTol && distX < bestDist) {
+        bestDist = distX
+        best = {
+          offsetX: cl.x - a.x,
+          offsetY: 0,
+          indicator: { x: cl.x, y: a.y, kind: 'centerline' },
+        }
+      }
+    }
+  }
+
+  // Regular anchor matching — closest pair within remaining tolerance wins.
   for (const a of draggedAnchors) {
     for (const b of candidates) {
       const ddx = b.x - a.x, ddy = b.y - a.y
@@ -251,6 +277,33 @@ export function computeMoveSnap(drag, dx, dy, tolerance) {
       if (dist < bestDist) {
         bestDist = dist
         best = { offsetX: ddx, offsetY: ddy, indicator: { x: b.x, y: b.y, kind: b.kind } }
+      }
+    }
+  }
+
+  // Edge snap — every visible non-dragged object's perimeter is a valid snap
+  // target for any dragged anchor. This is what lets you drag an aisle and
+  // catch the edge of a stage, the side of an obstruction, a wall segment,
+  // etc., even when there's no named anchor point right where you want.
+  const room   = activeRoom()
+  const layout = activeLayout()
+  const all = [...(room?.objects || []), ...(layout?.objects || [])]
+  for (const o of all) {
+    if (selIds.has(o.id) || o.hidden || o.locked) continue
+    const edges = getObjectEdges(o)
+    if (!edges.length) continue
+    for (const a of draggedAnchors) {
+      for (const [p1, p2] of edges) {
+        const cp = closestPointOnSegment([a.x, a.y], p1, p2)
+        const ddx = cp[0] - a.x, ddy = cp[1] - a.y
+        const dist = Math.hypot(ddx, ddy)
+        if (dist < bestDist) {
+          bestDist = dist
+          best = {
+            offsetX: ddx, offsetY: ddy,
+            indicator: { x: Math.round(cp[0]), y: Math.round(cp[1]), kind: 'edge' },
+          }
+        }
       }
     }
   }

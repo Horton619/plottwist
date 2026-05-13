@@ -33,15 +33,16 @@ window.addEventListener('DOMContentLoaded', () => {
   if (state.project.origin || state.project.centerline) {
     for (const room of state.project.rooms || []) {
       if (!room.origin)     room.origin     = state.project.origin     || { x: 0, y: 0 }
-      if (!room.centerline) room.centerline = state.project.centerline || { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+      if (!room.centerline) room.centerline = state.project.centerline || { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 }
     }
     delete state.project.origin
     delete state.project.centerline
   }
   for (const room of state.project.rooms || []) {
     if (!room.origin)     room.origin     = { x: 0, y: 0 }
-    if (!room.centerline) room.centerline = { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+    if (!room.centerline) room.centerline = { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 }
   }
+  migrateStrayLayoutObjects(state.project.rooms)
 
   initToolbar(document.getElementById('toolbar'))
   initProjectSidebar(document.getElementById('sidebar'))
@@ -57,6 +58,7 @@ window.addEventListener('DOMContentLoaded', () => {
   bindKeyboard()
   bindImageImport()
   bindLeftPaneSplit()
+  bindColumnSplits()
   initSettingsModal()
   initFireMarshalSheet()
   initExportDialog()
@@ -214,6 +216,67 @@ function clampRoomsH(px, pane) {
   return Math.max(min, Math.min(max, px))
 }
 
+// Horizontal splitters between the sidebar / canvas / info panes. Persists
+// each pane width to localStorage so the layout survives a relaunch.
+function bindColumnSplits() {
+  const grid = document.querySelector('.app-grid')
+  if (!grid) return
+  // Restore saved widths.
+  const sidebar = parseInt(localStorage.getItem('plottwist:sidebar-w') || '', 10)
+  const info    = parseInt(localStorage.getItem('plottwist:info-w')    || '', 10)
+  if (Number.isFinite(sidebar)) document.documentElement.style.setProperty('--sidebar-w', `${clampColW(sidebar)}px`)
+  if (Number.isFinite(info))    document.documentElement.style.setProperty('--info-w',    `${clampColW(info)}px`)
+
+  const splits = grid.querySelectorAll('.col-split')
+  splits.forEach(handle => {
+    const side = handle.dataset.split   // 'left' or 'right'
+    const cssVar = side === 'left' ? '--sidebar-w' : '--info-w'
+    const storeKey = side === 'left' ? 'plottwist:sidebar-w' : 'plottwist:info-w'
+    let startX = 0, startW = 0
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      handle.setPointerCapture(e.pointerId)
+      handle.classList.add('dragging')
+      startX = e.clientX
+      startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue(cssVar), 10) || 240
+      const onMove = (ev) => {
+        // Left handle: drag right → wider. Right handle: drag left → wider.
+        const delta = side === 'left' ? (ev.clientX - startX) : (startX - ev.clientX)
+        const next  = clampColW(startW + delta)
+        document.documentElement.style.setProperty(cssVar, `${next}px`)
+      }
+      const onUp = () => {
+        handle.classList.remove('dragging')
+        handle.removeEventListener('pointermove', onMove)
+        const final = parseInt(getComputedStyle(document.documentElement).getPropertyValue(cssVar), 10)
+        if (Number.isFinite(final)) localStorage.setItem(storeKey, String(final))
+      }
+      handle.addEventListener('pointermove', onMove)
+      handle.addEventListener('pointerup',     onUp, { once: true })
+      handle.addEventListener('pointercancel', onUp, { once: true })
+    })
+  })
+}
+function clampColW(px) { return Math.max(180, Math.min(700, px)) }
+
+// Move solver-generated objects (seating zones, aisles, dim lines) out of
+// room.objects (where they get stranded by unknown bugs / legacy save files)
+// into the first layout's objects. The convention: structural objects live
+// on the room; layout objects live on the layout. Mixing them breaks the
+// running seat total in the layers panel and confuses the export.
+const LAYOUT_OBJECT_TYPES = new Set(['seating', 'aisle', 'dim'])
+function migrateStrayLayoutObjects(rooms) {
+  for (const room of rooms || []) {
+    if (!room.layouts || !room.layouts.length) continue
+    const stray = (room.objects || []).filter(o => LAYOUT_OBJECT_TYPES.has(o.type))
+    if (!stray.length) continue
+    const target = room.layouts[0]
+    target.objects = [...(target.objects || []), ...stray]
+    room.objects = (room.objects || []).filter(o => !LAYOUT_OBJECT_TYPES.has(o.type))
+    console.warn(`Migrated ${stray.length} stray layout object(s) from venue to "${target.name}" in room "${room.name}".`)
+  }
+}
+
 function initTitle() {
   subscribe(() => {
     const dirty = state.dirty ? ' •' : ''
@@ -290,6 +353,20 @@ function bindKeyboard() {
       }
       return
     }
+    // ⌘V — paste shapes from the internal clipboard. The window 'paste' event
+    // also tries this, but Chromium suppresses the event when the system
+    // clipboard is empty, so ⌘V on a freshly-launched app with nothing copied
+    // outside PlotTwist would silently no-op. Wire ⌘V directly so internal
+    // shapes paste regardless of system clipboard state.
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'v' || e.key === 'V')) {
+      const tag = e.target && e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return  // don't steal text paste
+      if (state.shapeClipboard && state.shapeClipboard.length) {
+        e.preventDefault()
+        pasteShapes()
+      }
+      return
+    }
 
     // Tool shortcuts
     const toolMap = { v: 'select', f: 'floor', a: 'aisle', o: 'obstruction', g: 'stage', t: 'tech', w: 'walls', s: 'seating', d: 'dim' }
@@ -338,7 +415,7 @@ function newProject() {
     rooms: [{
       id: roomId, name: 'Room 1', objects: [],
       origin:     { x: 0, y: 0 },
-      centerline: { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 },
+      centerline: { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 },
       layouts: [{ id: layoutId, name: 'Layout 1', hidden: false, locked: false, objects: [] }],
     }],
     fireCode:   { jurisdictions: [] },
@@ -391,8 +468,13 @@ async function openProject() {
     const projCenter = data.centerline
     for (const room of data.rooms) {
       if (!room.origin)     room.origin     = projOrigin ?? { x: 0, y: 0 }
-      if (!room.centerline) room.centerline = projCenter ?? { enabled: false, x: 0, color: '#5be7d4', thickness: 1.5 }
+      if (!room.centerline) room.centerline = projCenter ?? { enabled: true, x: 0, color: '#5be7d4', thickness: 1.5 }
     }
+    // Defensive: solver-generated objects (seating, aisles, dims) should
+    // live on a layout, not on the room. Older files (or unknown-cause
+    // bugs) sometimes have them stranded in room.objects. Migrate them
+    // into the first layout so the running seat total + UI find them.
+    migrateStrayLayoutObjects(data.rooms)
     state.project = {
       rooms: data.rooms,
       fireCode: data.fireCode ?? { jurisdictions: [] },
@@ -524,12 +606,17 @@ function pasteShapes() {
   mutateProject(p => {
     const room = p.rooms.find(r => r.id === state.activeRoomId)
     if (!room) return
+    const layout = (room.layouts || []).find(l => l.id === state.activeLayoutId)
     for (const proto of state.shapeClipboard) {
       const dup = JSON.parse(JSON.stringify(proto))
       dup.id = uid('obj')
       newIds.push(dup.id)
       offsetObject(dup, PASTE_OFFSET_INCHES, PASTE_OFFSET_INCHES)
-      room.objects.push(dup)
+      // Route by type. Seating / aisle / dim live on layouts; everything
+      // else (floor, walls, stage, tech, obstruction, underlay images) on
+      // the room. Falls back to room.objects only if no active layout.
+      if (LAYOUT_OBJECT_TYPES.has(dup.type) && layout) layout.objects.push(dup)
+      else                                              room.objects.push(dup)
     }
   })
   setState({ selection: newIds })

@@ -57,8 +57,13 @@ export function endRectDraw() {
     }
 
     if (LAYOUT_TYPES.has(dr.type)) {
-      const layout = (room.layouts || []).find(l => l.id === state.activeLayoutId)
-      if (!layout) return
+      // Layout-type objects (seating, aisle) MUST live on a layout. Prefer
+      // the active layout; fall back to the room's first layout if for any
+      // reason activeLayoutId is stale. Pushing a seating zone to room.objects
+      // was a previously-seen bug — never do it.
+      const layouts = room.layouts || []
+      const layout  = layouts.find(l => l.id === state.activeLayoutId) || layouts[0]
+      if (!layout) { console.warn('rectTool: no layout available for', dr.type); return }
       layout.objects.push(obj)
     } else {
       room.objects.push(obj)

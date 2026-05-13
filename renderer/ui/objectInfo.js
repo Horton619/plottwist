@@ -291,8 +291,9 @@ function renderSeatingControls(o) {
   // its inner classroom + theater solvers (with classroom's section width
   // pinned to the theater's so the aisles line up cleanly through both).
   const showAisleControls = true
-  // Pattern dropdown is only meaningful for row-based styles right now.
-  const showPatternControl = (o.style === 'theater' || o.style === 'classroom')
+  // Pattern dropdown was scaffolding for chevron/curved variants before
+  // chevron became its own checkbox. Removed.
+  const showPatternControl = false
 
   return `
     <div class="panel-section">

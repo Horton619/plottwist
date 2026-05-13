@@ -70,7 +70,7 @@ function solveStraight(zone, opts) {
   // continuous angled line of tables anchored at the aisle edge; chair offsets
   // rotate with their parent table so chairs stay locked to their seat.
   const chevron      = !!zone.chevron
-  const chevronAngle = Math.max(0, Math.min(45, zone.chevronAngle ?? 15))
+  const chevronAngle = Math.max(-45, Math.min(45, zone.chevronAngle ?? 15))
 
   // Section cap for the per-section table count AND the auto-aisle spacing.
   //   • Standalone classroom: 24' fire-code cap (no aisle longer than 24'
@@ -130,9 +130,16 @@ function solveStraight(zone, opts) {
     const userRanges = verticalAisles.flatMap(poly => horizontalSpans(poly, tableCenterY))
     const allRanges  = [...autoRanges, ...userRanges]
 
-    const cleanSpans = allRanges.length
+    let cleanSpans = allRanges.length
       ? subtractRanges(spans, allRanges)
       : spans.map(([x0, x1]) => ({ x0, x1, justify: 'center' }))
+
+    // Chevron-without-aisles: anchor each span at its LEFT edge so the row
+    // slants in a single direction. User reflects across the centerline to
+    // build a symmetric V. Matches the theater solver's behavior.
+    if (chevron && aisleCount === 0 && cleanSpans.length) {
+      cleanSpans = cleanSpans.map(s => ({ ...s, justify: 'left' }))
+    }
 
     const rowTables = []
     let rowSeatCount = 0
@@ -151,8 +158,11 @@ function solveStraight(zone, opts) {
       // Each chevron'd row is a continuous angled line — first table flush
       // at the inner (aisle) edge, subsequent tables walk outward at the
       // chevron angle, all rotated as a group.
-      const isOuter = chevron && cleanSpans.length > 1
-                     && (spanIdx === 0 || spanIdx === cleanSpans.length - 1)
+      const isOuter = chevron && (
+        aisleCount === 0
+          ? true
+          : (cleanSpans.length > 1 && (spanIdx === 0 || spanIdx === cleanSpans.length - 1))
+      )
       // Sign convention: positive chevronAngle slants the row's outer end
       // TOWARD the stage (smaller y). Negative reverses.
       const sectionAngle = isOuter

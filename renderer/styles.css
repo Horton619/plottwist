@@ -97,10 +97,20 @@ input {
   bottom: var(--footer-h);
   left: 0; right: 0;
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr var(--info-w);
+  /* sidebar | split | canvas | split | info */
+  grid-template-columns: var(--sidebar-w) 6px 1fr 6px var(--info-w);
   background: var(--bg);
   min-height: 0;
 }
+
+/* Vertical splitter between left/right panes and the canvas. */
+.col-split {
+  background: var(--border-soft, #1c2030);
+  cursor: col-resize;
+  user-select: none;
+  transition: background 0.12s ease;
+}
+.col-split:hover, .col-split.dragging { background: var(--accent); }
 
 .pane { overflow: hidden; }
 
@@ -400,15 +410,18 @@ input {
 }
 .sel-handle:hover { fill: var(--accent); }
 
-/* Mid-edge polygon handles — smaller, hollow, drag inserts a vertex. */
+/* Mid-edge polygon handles — drag to translate the edge perpendicular to
+ * itself. Direction-aware cursor (ns/ew/nesw/nwse) is set inline per handle
+ * based on the edge angle. Alt-held flips to "copy" (plus) to signal the
+ * insert-vertex shortcut. */
 .sel-midhandle {
   fill: var(--bg);
   stroke: var(--accent);
   stroke-width: 1;
   opacity: 0.6;
-  cursor: copy;
 }
 .sel-midhandle:hover { opacity: 1; fill: var(--accent); }
+body.alt-held .sel-midhandle { cursor: copy !important; }
 
 /* Tool previews */
 .tool-preview {

@@ -2,359 +2,157 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>PlotTwist — logo direction mockups</title>
+<title>PlotTwist — logo final (H4a square grid)</title>
 <style>
   :root {
     --bg:           #070910;
     --bg-panel:     #0f131e;
-    --bg-elevated:  #161b27;
-    --border:       #2a2f3d;
     --border-soft:  #1c2030;
     --text:         #e8ebf3;
     --text-dim:     #aab0c0;
     --text-faint:   #6b7385;
     --accent:       #FF2D9D;
+    --grid:         #2a3147;
   }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
   body { padding: 24px 32px 80px; }
   h1 { margin: 0 0 6px; font-weight: 600; font-size: 22px; letter-spacing: -0.01em; }
-  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; max-width: 760px; line-height: 1.5; }
-  h2.section { margin: 32px 0 12px; font-size: 13px; font-weight: 600; color: var(--accent);
-               text-transform: uppercase; letter-spacing: 0.1em; }
-  h2.section .descr { color: var(--text-faint); font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 10px; }
-  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .panel { background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: 10px; padding: 14px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 24px; max-width: 760px; line-height: 1.5; }
+  .row { display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 520px; }
+  .panel { background: var(--bg-panel); border: 1px solid var(--border-soft); border-radius: 10px; padding: 18px; }
   .panel h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
-  .panel .desc { font-size: 11.5px; color: var(--text-faint); margin-bottom: 12px; line-height: 1.5; min-height: 48px; }
+  .panel .desc { font-size: 11.5px; color: var(--text-faint); margin-bottom: 14px; line-height: 1.5; }
   .big-icon { background: #0a0d16; border: 1px dashed var(--border-soft); border-radius: 12px;
               aspect-ratio: 1; display: flex; align-items: center; justify-content: center; padding: 0; }
-  .big-icon svg { width: 78%; height: 78%; display: block; }
-  .preview-row { display: flex; gap: 14px; margin-top: 12px; align-items: center; justify-content: center; }
+  .big-icon svg { width: 80%; height: 80%; display: block; }
+  .preview-row { display: flex; gap: 18px; margin-top: 14px; align-items: center; justify-content: center; }
   .preview-row .ic { background: #0a0d16; border-radius: 8px; padding: 6px;
                      display: flex; align-items: center; justify-content: center; }
+  .preview-row .ic.s64  { width: 64px; height: 64px; }
   .preview-row .ic.s48  { width: 48px; height: 48px; }
   .preview-row .ic.s32  { width: 32px; height: 32px; padding: 4px; border-radius: 6px; }
   .preview-row .ic.s16  { width: 16px; height: 16px; padding: 2px; border-radius: 4px; }
   .preview-row svg { width: 100%; height: 100%; }
   .preview-label { font-size: 10px; color: var(--text-faint); text-align: center; margin-top: 4px; }
-
-  /* shared visual tokens */
-  .stroke-accent { stroke: #FF2D9D; }
-  .fill-accent   { fill:   #FF2D9D; }
-  .dim           { fill: #1a1f2e; stroke: #FF2D9D; }
-
-  .header-meta { display:flex; gap:24px; font-size:11px; color: var(--text-faint); margin-top: 16px; }
-  .header-meta span b { color: var(--text-dim); font-weight: 600; }
 </style>
 </head>
 <body>
 
-<h1>PlotTwist — logo direction mockups</h1>
+<h1>PlotTwist — H4a (square grid)</h1>
 <p class="sub">
-  Three directions × three variants each. Each panel shows the icon at large size, plus thumbnails at 48 / 32 / 16 px to test how it survives the squeeze.
-  Brand colors locked: <b style="color:#FF2D9D">magenta #FF2D9D</b> on <b>navy #070910</b>.
+  Locked: dashed marquee + square vertex handles + active vertex, chairs facing up, faint axes through center.
+  Grid stepped to 32 so it divides the 256 canvas evenly (8 × 8 cells) and the axes sit exactly on grid lines.
 </p>
 
-<div class="header-meta">
-  <span><b>Output targets:</b> icon.icns / icon.ico / dmg-bg / in-app brand-mark</span>
-  <span><b>Critical size:</b> 16×16 (toolbar / favicon) — if it doesn't read here, kill it</span>
-</div>
-
-<!-- ────────────────────────────────────────────────────────────────────── -->
-<h2 class="section">Option A — Twisted polygon <span class="descr">domain-native; matches the polygon editor anyone using the app sees daily</span></h2>
 <div class="row">
-
-  <!-- A1 -->
   <div class="panel">
-    <h3>A1 — Pentagon w/ active vertex</h3>
-    <div class="desc">Irregular pentagon outline, two vertex dots brighter (selected/active drag). Echoes the editor's vertex handles.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <polygon points="48,80 180,52 224,128 156,212 64,184" fill="none" stroke="#FF2D9D" stroke-width="10" stroke-linejoin="round"/>
-      <circle cx="48"  cy="80"  r="9"  fill="#0a0d16" stroke="#FF2D9D" stroke-width="3"/>
-      <circle cx="180" cy="52"  r="13" fill="#FF2D9D"/>
-      <circle cx="224" cy="128" r="9"  fill="#0a0d16" stroke="#FF2D9D" stroke-width="3"/>
-      <circle cx="156" cy="212" r="13" fill="#FF2D9D"/>
-      <circle cx="64"  cy="184" r="9"  fill="#0a0d16" stroke="#FF2D9D" stroke-width="3"/>
-    </svg></div>
+    <h3>Final</h3>
+    <div class="desc">8 × 8 grid, axes on grid lines, dashed magenta marquee polygon with three vertex handles + one active vertex (the twist), three classroom tables with chair pips facing up.</div>
+    <div class="big-icon"><svg viewBox="0 0 256 256" id="main"></svg></div>
     <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><polygon points="48,80 180,52 224,128 156,212 64,184" fill="none" stroke="#FF2D9D" stroke-width="14" stroke-linejoin="round"/><circle cx="180" cy="52" r="20" fill="#FF2D9D"/><circle cx="156" cy="212" r="20" fill="#FF2D9D"/></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><polygon points="48,80 180,52 224,128 156,212 64,184" fill="none" stroke="#FF2D9D" stroke-width="18" stroke-linejoin="round"/><circle cx="180" cy="52" r="26" fill="#FF2D9D"/><circle cx="156" cy="212" r="26" fill="#FF2D9D"/></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><polygon points="48,80 180,52 224,128 156,212 64,184" fill="none" stroke="#FF2D9D" stroke-width="28" stroke-linejoin="round"/><circle cx="180" cy="52" r="38" fill="#FF2D9D"/><circle cx="156" cy="212" r="38" fill="#FF2D9D"/></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
-
-  <!-- A2 -->
-  <div class="panel">
-    <h3>A2 — L-shape room w/ chair pip pattern</h3>
-    <div class="desc">L-shaped polygon (common real room shape) outlined in magenta with vertex dots; a few faint chair pips inside hint at the solver.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <!-- L polygon -->
-      <polygon points="44,48 168,48 168,128 212,128 212,212 44,212" fill="none" stroke="#FF2D9D" stroke-width="10" stroke-linejoin="round"/>
-      <!-- chair pips: small rounded rects -->
-      <g fill="#FF2D9D" fill-opacity="0.55">
-        <rect x="64"  y="80"  width="14" height="10" rx="2"/>
-        <rect x="86"  y="80"  width="14" height="10" rx="2"/>
-        <rect x="108" y="80"  width="14" height="10" rx="2"/>
-        <rect x="130" y="80"  width="14" height="10" rx="2"/>
-        <rect x="64"  y="104" width="14" height="10" rx="2"/>
-        <rect x="86"  y="104" width="14" height="10" rx="2"/>
-        <rect x="108" y="104" width="14" height="10" rx="2"/>
-        <rect x="130" y="104" width="14" height="10" rx="2"/>
-        <rect x="64"  y="152" width="14" height="10" rx="2"/>
-        <rect x="86"  y="152" width="14" height="10" rx="2"/>
-        <rect x="108" y="152" width="14" height="10" rx="2"/>
-        <rect x="130" y="152" width="14" height="10" rx="2"/>
-        <rect x="152" y="152" width="14" height="10" rx="2"/>
-        <rect x="174" y="152" width="14" height="10" rx="2"/>
-        <rect x="64"  y="176" width="14" height="10" rx="2"/>
-        <rect x="86"  y="176" width="14" height="10" rx="2"/>
-        <rect x="108" y="176" width="14" height="10" rx="2"/>
-        <rect x="130" y="176" width="14" height="10" rx="2"/>
-        <rect x="152" y="176" width="14" height="10" rx="2"/>
-        <rect x="174" y="176" width="14" height="10" rx="2"/>
-      </g>
-      <!-- vertex dots -->
-      <g fill="#FF2D9D">
-        <circle cx="44"  cy="48"  r="8"/>
-        <circle cx="168" cy="48"  r="8"/>
-        <circle cx="168" cy="128" r="8"/>
-        <circle cx="212" cy="128" r="8"/>
-        <circle cx="212" cy="212" r="8"/>
-        <circle cx="44"  cy="212" r="8"/>
-      </g>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><polygon points="44,48 168,48 168,128 212,128 212,212 44,212" fill="none" stroke="#FF2D9D" stroke-width="14" stroke-linejoin="round"/><g fill="#FF2D9D"><circle cx="44" cy="48" r="14"/><circle cx="168" cy="48" r="14"/><circle cx="168" cy="128" r="14"/><circle cx="212" cy="128" r="14"/><circle cx="212" cy="212" r="14"/><circle cx="44" cy="212" r="14"/></g></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><polygon points="44,48 168,48 168,128 212,128 212,212 44,212" fill="none" stroke="#FF2D9D" stroke-width="20" stroke-linejoin="round"/><g fill="#FF2D9D"><circle cx="44" cy="48" r="20"/><circle cx="168" cy="48" r="20"/><circle cx="168" cy="128" r="20"/><circle cx="212" cy="128" r="20"/><circle cx="212" cy="212" r="20"/><circle cx="44" cy="212" r="20"/></g></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><polygon points="44,48 168,48 168,128 212,128 212,212 44,212" fill="none" stroke="#FF2D9D" stroke-width="32" stroke-linejoin="round"/></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
-
-  <!-- A3 -->
-  <div class="panel">
-    <h3>A3 — Twist-in-progress</h3>
-    <div class="desc">Quadrilateral with one vertex visibly mid-drag: solid magenta polygon, dashed "ghost" outline of the previous shape, drag handle on the active vertex.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <!-- ghost previous position -->
-      <polygon points="56,72 200,72 200,200 56,200" fill="none" stroke="#FF2D9D" stroke-width="4" stroke-opacity="0.35" stroke-dasharray="8 6"/>
-      <!-- twisted active polygon -->
-      <polygon points="56,72 232,40 200,200 56,200" fill="none" stroke="#FF2D9D" stroke-width="10" stroke-linejoin="round"/>
-      <!-- vertex dots -->
-      <g fill="#FF2D9D">
-        <circle cx="56"  cy="72"  r="8"/>
-        <circle cx="200" cy="200" r="8"/>
-        <circle cx="56"  cy="200" r="8"/>
-      </g>
-      <!-- active vertex with drag halo -->
-      <circle cx="232" cy="40" r="20" fill="none" stroke="#FF2D9D" stroke-width="2" stroke-opacity="0.45"/>
-      <circle cx="232" cy="40" r="13" fill="#FF2D9D"/>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><polygon points="56,72 232,40 200,200 56,200" fill="none" stroke="#FF2D9D" stroke-width="16" stroke-linejoin="round"/><circle cx="232" cy="40" r="22" fill="#FF2D9D"/></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><polygon points="56,72 232,40 200,200 56,200" fill="none" stroke="#FF2D9D" stroke-width="22" stroke-linejoin="round"/><circle cx="232" cy="40" r="30" fill="#FF2D9D"/></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><polygon points="56,72 232,40 200,200 56,200" fill="none" stroke="#FF2D9D" stroke-width="34" stroke-linejoin="round"/></svg></div><div class="preview-label">16</div></div>
+      <div><div class="ic s64"><svg viewBox="0 0 256 256" class="p-64"></svg></div><div class="preview-label">64</div></div>
+      <div><div class="ic s48"><svg viewBox="0 0 256 256" class="p-48"></svg></div><div class="preview-label">48</div></div>
+      <div><div class="ic s32"><svg viewBox="0 0 256 256" class="p-32"></svg></div><div class="preview-label">32</div></div>
+      <div><div class="ic s16"><svg viewBox="0 0 256 256" class="p-16"></svg></div><div class="preview-label">16</div></div>
     </div>
   </div>
 </div>
 
-<!-- ────────────────────────────────────────────────────────────────────── -->
-<h2 class="section">Option B — Stage + chairs <span class="descr">literal seating plan from above; instant recognition to event-industry people</span></h2>
-<div class="row">
+<script>
+const ACCENT = '#FF2D9D'
+const GRID   = '#2a3147'
+const NS     = 'http://www.w3.org/2000/svg'
+const mk = (name, attrs) => {
+  const el = document.createElementNS(NS, name)
+  for (const k in attrs) el.setAttribute(k, attrs[k])
+  return el
+}
 
-  <!-- B1 -->
-  <div class="panel">
-    <h3>B1 — Stage + chevron rows</h3>
-    <div class="desc">Stage block at top, three rows of chair pips in a gentle chevron. Pure top-down floorplan view.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <!-- stage -->
-      <rect x="48" y="36" width="160" height="22" rx="3" fill="#FF2D9D"/>
-      <!-- chairs: chevron rows -->
-      <g fill="#FF2D9D">
-        <!-- row 1 -->
-        <g transform="translate(48,96)">
-          <rect x="0"   y="0"  width="16" height="14" rx="2" transform="rotate(-12,8,7)"/>
-          <rect x="22"  y="-4" width="16" height="14" rx="2" transform="rotate(-6,30,3)"/>
-          <rect x="48"  y="-8" width="16" height="14" rx="2"/>
-          <rect x="74"  y="-8" width="16" height="14" rx="2"/>
-          <rect x="100" y="-4" width="16" height="14" rx="2" transform="rotate(6,108,3)"/>
-          <rect x="124" y="0"  width="16" height="14" rx="2" transform="rotate(12,132,7)"/>
-        </g>
-        <!-- row 2 -->
-        <g transform="translate(48,138)">
-          <rect x="0"   y="0"  width="16" height="14" rx="2" transform="rotate(-12,8,7)"/>
-          <rect x="22"  y="-4" width="16" height="14" rx="2" transform="rotate(-6,30,3)"/>
-          <rect x="48"  y="-8" width="16" height="14" rx="2"/>
-          <rect x="74"  y="-8" width="16" height="14" rx="2"/>
-          <rect x="100" y="-4" width="16" height="14" rx="2" transform="rotate(6,108,3)"/>
-          <rect x="124" y="0"  width="16" height="14" rx="2" transform="rotate(12,132,7)"/>
-        </g>
-        <!-- row 3 -->
-        <g transform="translate(48,180)">
-          <rect x="0"   y="0"  width="16" height="14" rx="2" transform="rotate(-12,8,7)"/>
-          <rect x="22"  y="-4" width="16" height="14" rx="2" transform="rotate(-6,30,3)"/>
-          <rect x="48"  y="-8" width="16" height="14" rx="2"/>
-          <rect x="74"  y="-8" width="16" height="14" rx="2"/>
-          <rect x="100" y="-4" width="16" height="14" rx="2" transform="rotate(6,108,3)"/>
-          <rect x="124" y="0"  width="16" height="14" rx="2" transform="rotate(12,132,7)"/>
-        </g>
-      </g>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><rect x="48" y="36" width="160" height="26" rx="3" fill="#FF2D9D"/><g fill="#FF2D9D"><rect x="60" y="110" width="136" height="20" rx="3"/><rect x="60" y="148" width="136" height="20" rx="3"/><rect x="60" y="186" width="136" height="20" rx="3"/></g></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><rect x="48" y="36" width="160" height="32" rx="3" fill="#FF2D9D"/><rect x="48" y="100" width="160" height="32" rx="3" fill="#FF2D9D"/><rect x="48" y="146" width="160" height="32" rx="3" fill="#FF2D9D"/><rect x="48" y="192" width="160" height="32" rx="3" fill="#FF2D9D"/></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><rect x="48" y="36" width="160" height="40" rx="6" fill="#FF2D9D"/><rect x="48" y="104" width="160" height="40" rx="6" fill="#FF2D9D"/><rect x="48" y="172" width="160" height="40" rx="6" fill="#FF2D9D"/></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
+// Square grid: 32px step on 256 viewBox = 8 cells. Axes land at x=128, y=128
+// which is on a grid line, so the cross sits perfectly on the grid.
+function gridBg(svg, step = 32, opacity = 0.55, w = 2) {
+  const g = mk('g', { opacity })
+  for (let x = 0; x <= 256; x += step) g.appendChild(mk('line', { x1: x, y1: 0, x2: x, y2: 256, stroke: GRID, 'stroke-width': w }))
+  for (let y = 0; y <= 256; y += step) g.appendChild(mk('line', { x1: 0, y1: y, x2: 256, y2: y, stroke: GRID, 'stroke-width': w }))
+  svg.appendChild(g)
+}
 
-  <!-- B2 -->
-  <div class="panel">
-    <h3>B2 — Stage + rounds half-circle</h3>
-    <div class="desc">Stage at top; semicircle arc of round tables below. Reads as "banquet/wedding seating" specifically.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <!-- stage -->
-      <rect x="56" y="36" width="144" height="22" rx="3" fill="#FF2D9D"/>
-      <!-- rounds: outer arc -->
-      <g fill="none" stroke="#FF2D9D" stroke-width="6">
-        <circle cx="68"  cy="156" r="22"/>
-        <circle cx="128" cy="128" r="22"/>
-        <circle cx="188" cy="156" r="22"/>
-        <circle cx="98"  cy="208" r="22"/>
-        <circle cx="158" cy="208" r="22"/>
-      </g>
-      <!-- chair dots around each table -->
-      <g fill="#FF2D9D">
-        <!-- crude — six chairs each -->
-        <g transform="translate(68,156)"><circle cx="0" cy="-28" r="3"/><circle cx="24" cy="-14" r="3"/><circle cx="24" cy="14" r="3"/><circle cx="0" cy="28" r="3"/><circle cx="-24" cy="14" r="3"/><circle cx="-24" cy="-14" r="3"/></g>
-        <g transform="translate(128,128)"><circle cx="0" cy="-28" r="3"/><circle cx="24" cy="-14" r="3"/><circle cx="24" cy="14" r="3"/><circle cx="0" cy="28" r="3"/><circle cx="-24" cy="14" r="3"/><circle cx="-24" cy="-14" r="3"/></g>
-        <g transform="translate(188,156)"><circle cx="0" cy="-28" r="3"/><circle cx="24" cy="-14" r="3"/><circle cx="24" cy="14" r="3"/><circle cx="0" cy="28" r="3"/><circle cx="-24" cy="14" r="3"/><circle cx="-24" cy="-14" r="3"/></g>
-        <g transform="translate(98,208)"><circle cx="0" cy="-28" r="3"/><circle cx="24" cy="-14" r="3"/><circle cx="24" cy="14" r="3"/><circle cx="0" cy="28" r="3"/><circle cx="-24" cy="14" r="3"/><circle cx="-24" cy="-14" r="3"/></g>
-        <g transform="translate(158,208)"><circle cx="0" cy="-28" r="3"/><circle cx="24" cy="-14" r="3"/><circle cx="24" cy="14" r="3"/><circle cx="0" cy="28" r="3"/><circle cx="-24" cy="14" r="3"/><circle cx="-24" cy="-14" r="3"/></g>
-      </g>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><rect x="56" y="36" width="144" height="26" rx="3" fill="#FF2D9D"/><g fill="none" stroke="#FF2D9D" stroke-width="12"><circle cx="68" cy="156" r="22"/><circle cx="128" cy="128" r="22"/><circle cx="188" cy="156" r="22"/><circle cx="98" cy="208" r="22"/><circle cx="158" cy="208" r="22"/></g></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><rect x="48" y="32" width="160" height="36" rx="3" fill="#FF2D9D"/><g fill="#FF2D9D"><circle cx="76" cy="148" r="26"/><circle cx="128" cy="128" r="26"/><circle cx="180" cy="148" r="26"/><circle cx="100" cy="208" r="26"/><circle cx="156" cy="208" r="26"/></g></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><rect x="32" y="32" width="192" height="48" rx="6" fill="#FF2D9D"/><g fill="#FF2D9D"><circle cx="92" cy="160" r="40"/><circle cx="164" cy="160" r="40"/></g></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
+function axes(svg, { w = 5, opacity = 0.55 } = {}) {
+  svg.appendChild(mk('line', { x1: 14, y1: 128, x2: 242, y2: 128, stroke: ACCENT, 'stroke-width': w, 'stroke-linecap': 'round', opacity }))
+  svg.appendChild(mk('line', { x1: 128, y1: 14, x2: 128, y2: 242, stroke: ACCENT, 'stroke-width': w, 'stroke-linecap': 'round', opacity }))
+}
 
-  <!-- B3 -->
-  <div class="panel">
-    <h3>B3 — Stage + center aisle block</h3>
-    <div class="desc">Stage at top with a clean rectangular block of seating, single center aisle visible. Pared-down version of B1.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <rect x="56" y="40" width="144" height="22" rx="3" fill="#FF2D9D"/>
-      <!-- left block -->
-      <g fill="#FF2D9D">
-        <rect x="56" y="92"  width="80" height="14" rx="3"/>
-        <rect x="56" y="116" width="80" height="14" rx="3"/>
-        <rect x="56" y="140" width="80" height="14" rx="3"/>
-        <rect x="56" y="164" width="80" height="14" rx="3"/>
-        <rect x="56" y="188" width="80" height="14" rx="3"/>
-        <!-- right block (mirrored across aisle) -->
-        <rect x="148" y="92"  width="80" height="14" rx="3"/>
-        <rect x="148" y="116" width="80" height="14" rx="3"/>
-        <rect x="148" y="140" width="80" height="14" rx="3"/>
-        <rect x="148" y="164" width="80" height="14" rx="3"/>
-        <rect x="148" y="188" width="80" height="14" rx="3"/>
-      </g>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><rect x="56" y="40" width="144" height="22" rx="3" fill="#FF2D9D"/><g fill="#FF2D9D"><rect x="56" y="100" width="80" height="22" rx="3"/><rect x="148" y="100" width="80" height="22" rx="3"/><rect x="56" y="136" width="80" height="22" rx="3"/><rect x="148" y="136" width="80" height="22" rx="3"/><rect x="56" y="172" width="80" height="22" rx="3"/><rect x="148" y="172" width="80" height="22" rx="3"/></g></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><rect x="40" y="36" width="176" height="32" rx="3" fill="#FF2D9D"/><g fill="#FF2D9D"><rect x="40" y="104" width="80" height="28" rx="3"/><rect x="136" y="104" width="80" height="28" rx="3"/><rect x="40" y="144" width="80" height="28" rx="3"/><rect x="136" y="144" width="80" height="28" rx="3"/><rect x="40" y="184" width="80" height="28" rx="3"/><rect x="136" y="184" width="80" height="28" rx="3"/></g></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><rect x="24" y="32" width="208" height="44" rx="6" fill="#FF2D9D"/><rect x="24" y="108" width="92" height="40" rx="6" fill="#FF2D9D"/><rect x="140" y="108" width="92" height="40" rx="6" fill="#FF2D9D"/><rect x="24" y="172" width="92" height="40" rx="6" fill="#FF2D9D"/><rect x="140" y="172" width="92" height="40" rx="6" fill="#FF2D9D"/></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
-</div>
+// Axis-aligned square, snapped to grid lines (64–192 on both axes = 4×4 cells).
+// Active vertex is the top-right corner (the "twist" / drag handle).
+const POLY_PTS  = [[64,64],[192,64],[192,192],[64,192]]
+const ACTIVE_I  = 1
+function marquee(svg, { strokeW = 7, dash = '10 6', dotR = 9, activeR = 14 } = {}) {
+  svg.appendChild(mk('polygon', {
+    points: POLY_PTS.map(p => p.join(',')).join(' '),
+    fill: 'none', stroke: ACCENT, 'stroke-width': strokeW,
+    'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+    'stroke-dasharray': dash
+  }))
+  POLY_PTS.forEach(([x, y], i) => {
+    if (i === ACTIVE_I) {
+      svg.appendChild(mk('circle', { cx: x, cy: y, r: activeR, fill: ACCENT }))
+    } else {
+      svg.appendChild(mk('rect', { x: x - dotR, y: y - dotR, width: dotR * 2, height: dotR * 2, fill: '#0a0d16', stroke: ACCENT, 'stroke-width': 3 }))
+    }
+  })
+}
 
-<!-- ────────────────────────────────────────────────────────────────────── -->
-<h2 class="section">Option C — Letter mark <span class="descr">monogram; fastest to make, generic but bulletproof scaling</span></h2>
-<div class="row">
+function tables(svg, rows, { withChairs = false, chairD = 8 } = {}) {
+  // Inset from the square (64..192) to leave breathing room and space for chair pips.
+  const xLeft  = 80, xRight = 176, yTop = 84, yBot = 178
+  const tableW = xRight - xLeft, tableH = 14
+  const rowPitch = (yBot - yTop - tableH) / Math.max(1, rows - 1)
+  for (let i = 0; i < rows; i++) {
+    const y = yTop + i * rowPitch
+    svg.appendChild(mk('rect', { x: xLeft, y, width: tableW, height: tableH, rx: 2, fill: ACCENT }))
+    if (withChairs) {
+      const pipW = 13, pipGap = 4
+      const nPips = Math.floor((tableW + pipGap) / (pipW + pipGap))
+      const totalPipW = nPips * pipW + (nPips - 1) * pipGap
+      const pipStart = xLeft + (tableW - totalPipW) / 2
+      for (let j = 0; j < nPips; j++) {
+        svg.appendChild(mk('rect', {
+          x: pipStart + j * (pipW + pipGap), y: y + tableH + 2,
+          width: pipW, height: chairD, rx: 2, fill: ACCENT
+        }))
+      }
+    }
+  }
+}
 
-  <!-- C1 -->
-  <div class="panel">
-    <h3>C1 — PT, T-bar tilted</h3>
-    <div class="desc">Geometric sans, "P" stacked with "T" — T's crossbar tilted 18° to imply "twist." Stack reads as a unit at 16×16.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <g fill="#FF2D9D">
-        <!-- P -->
-        <path d="M 40 40 L 40 216 L 80 216 L 80 152 L 132 152
-                 C 168 152 192 128 192 96
-                 C 192 64 168 40 132 40 Z
-                 M 80 80 L 132 80 C 144 80 152 88 152 96
-                 C 152 104 144 112 132 112 L 80 112 Z"
-              fill-rule="evenodd"/>
-        <!-- T crossbar (tilted) -->
-        <rect x="160" y="32" width="80" height="22" rx="4" transform="rotate(18, 200, 43)"/>
-        <!-- T stem -->
-        <rect x="208" y="48" width="22" height="100" rx="4"/>
-      </g>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 40 40 L 40 216 L 80 216 L 80 152 L 132 152 C 168 152 192 128 192 96 C 192 64 168 40 132 40 Z M 80 80 L 132 80 C 144 80 152 88 152 96 C 152 104 144 112 132 112 L 80 112 Z" fill-rule="evenodd"/><rect x="160" y="32" width="80" height="22" rx="4" transform="rotate(18, 200, 43)"/><rect x="208" y="48" width="22" height="100" rx="4"/></g></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 40 40 L 40 216 L 80 216 L 80 152 L 132 152 C 168 152 192 128 192 96 C 192 64 168 40 132 40 Z M 80 80 L 132 80 C 144 80 152 88 152 96 C 152 104 144 112 132 112 L 80 112 Z" fill-rule="evenodd"/><rect x="160" y="32" width="80" height="22" rx="4" transform="rotate(18, 200, 43)"/><rect x="208" y="48" width="22" height="100" rx="4"/></g></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 40 40 L 40 216 L 80 216 L 80 152 L 132 152 C 168 152 192 128 192 96 C 192 64 168 40 132 40 Z M 80 80 L 132 80 C 144 80 152 88 152 96 C 152 104 144 112 132 112 L 80 112 Z" fill-rule="evenodd"/><rect x="160" y="32" width="80" height="26" rx="4" transform="rotate(18, 200, 45)"/><rect x="208" y="48" width="22" height="100" rx="4"/></g></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
+function build(svg, opts = {}) {
+  const {
+    gridStep = 32, gridOp = 0.55,
+    axis = true, axisW = 5, axisOp = 0.55,
+    rows = 3, withChairs = true,
+    polyW = 7, dash = '10 6', dotR = 9, activeR = 14,
+  } = opts
+  gridBg(svg, gridStep, gridOp)
+  if (axis) axes(svg, { w: axisW, opacity: axisOp })
+  tables(svg, rows, { withChairs })
+  marquee(svg, { strokeW: polyW, dash, dotR, activeR })
+}
 
-  <!-- C2 -->
-  <div class="panel">
-    <h3>C2 — P + rotation arrow</h3>
-    <div class="desc">"P" with a curved arrow looping through it — explicit visual reference to rotation/twist. Heavier than C1; arrow may not survive small sizes.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <!-- P -->
-      <g fill="#FF2D9D">
-        <path d="M 64 40 L 64 216 L 108 216 L 108 152 L 156 152
-                 C 192 152 216 128 216 96
-                 C 216 64 192 40 156 40 Z
-                 M 108 80 L 156 80 C 168 80 176 88 176 96
-                 C 176 104 168 112 156 112 L 108 112 Z"
-              fill-rule="evenodd"/>
-      </g>
-      <!-- rotation arrow circling P's bowl -->
-      <path d="M 200 160 A 50 50 0 1 1 130 130" fill="none" stroke="#FF2D9D" stroke-width="14" stroke-linecap="round"/>
-      <path d="M 124 118 L 134 132 L 116 138 Z" fill="#FF2D9D"/>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 64 40 L 64 216 L 108 216 L 108 152 L 156 152 C 192 152 216 128 216 96 C 216 64 192 40 156 40 Z M 108 80 L 156 80 C 168 80 176 88 176 96 C 176 104 168 112 156 112 L 108 112 Z" fill-rule="evenodd"/></g><path d="M 200 160 A 50 50 0 1 1 130 130" fill="none" stroke="#FF2D9D" stroke-width="20" stroke-linecap="round"/></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 64 40 L 64 216 L 108 216 L 108 152 L 156 152 C 192 152 216 128 216 96 C 216 64 192 40 156 40 Z M 108 80 L 156 80 C 168 80 176 88 176 96 C 176 104 168 112 156 112 L 108 112 Z" fill-rule="evenodd"/></g></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 64 40 L 64 216 L 108 216 L 108 152 L 156 152 C 192 152 216 128 216 96 C 216 64 192 40 156 40 Z M 108 80 L 156 80 C 168 80 176 88 176 96 C 176 104 168 112 156 112 L 108 112 Z" fill-rule="evenodd"/></g></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
-
-  <!-- C3 -->
-  <div class="panel">
-    <h3>C3 — Pt w/ chair-pip dot</h3>
-    <div class="desc">"Pt" lowercase wordmark; the dot of the "t" is replaced with a chair pip (small rounded rect). Subtle nod to the app.</div>
-    <div class="big-icon"><svg viewBox="0 0 256 256">
-      <g fill="#FF2D9D">
-        <!-- P -->
-        <path d="M 36 56 L 36 224 L 76 224 L 76 168 L 124 168
-                 C 160 168 184 144 184 112
-                 C 184 80 160 56 124 56 Z
-                 M 76 96 L 124 96 C 136 96 144 104 144 112
-                 C 144 120 136 128 124 128 L 76 128 Z"
-              fill-rule="evenodd"/>
-        <!-- t stem -->
-        <rect x="196" y="80" width="22" height="120" rx="4"/>
-        <!-- t crossbar -->
-        <rect x="180" y="100" width="54" height="14" rx="3"/>
-        <!-- pip "dot" above the t -->
-        <rect x="194" y="48" width="26" height="20" rx="4"/>
-      </g>
-    </svg></div>
-    <div class="preview-row">
-      <div><div class="ic s48"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 36 56 L 36 224 L 76 224 L 76 168 L 124 168 C 160 168 184 144 184 112 C 184 80 160 56 124 56 Z M 76 96 L 124 96 C 136 96 144 104 144 112 C 144 120 136 128 124 128 L 76 128 Z" fill-rule="evenodd"/><rect x="196" y="80" width="22" height="120" rx="4"/><rect x="180" y="100" width="54" height="14" rx="3"/><rect x="194" y="48" width="26" height="20" rx="4"/></g></svg></div><div class="preview-label">48</div></div>
-      <div><div class="ic s32"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 36 56 L 36 224 L 76 224 L 76 168 L 124 168 C 160 168 184 144 184 112 C 184 80 160 56 124 56 Z M 76 96 L 124 96 C 136 96 144 104 144 112 C 144 120 136 128 124 128 L 76 128 Z" fill-rule="evenodd"/><rect x="196" y="80" width="22" height="120" rx="4"/><rect x="180" y="100" width="54" height="14" rx="3"/><rect x="194" y="48" width="26" height="20" rx="4"/></g></svg></div><div class="preview-label">32</div></div>
-      <div><div class="ic s16"><svg viewBox="0 0 256 256"><g fill="#FF2D9D"><path d="M 36 56 L 36 224 L 76 224 L 76 168 L 124 168 C 160 168 184 144 184 112 C 184 80 160 56 124 56 Z M 76 96 L 124 96 C 136 96 144 104 144 112 C 144 120 136 128 124 128 L 76 128 Z" fill-rule="evenodd"/><rect x="196" y="80" width="22" height="120" rx="4"/><rect x="180" y="100" width="54" height="14" rx="3"/></g></svg></div><div class="preview-label">16</div></div>
-    </div>
-  </div>
-</div>
-
-<p style="margin-top:48px; color: var(--text-faint); font-size: 11px; text-align:center;">
-  All assets pure SVG — easy to iterate. Once you pick, the chosen direction gets rasterized to PNG → .icns / .ico, plus a DMG bg sketch in the same family.
-</p>
+build(document.getElementById('main'))
+build(document.querySelector('.p-64'),  { polyW: 8, dash: '12 7', dotR: 10, activeR: 15 })
+build(document.querySelector('.p-48'),  { gridStep: 32, gridOp: 0.45, axisW: 6, polyW: 10, dash: '12 7', dotR: 11, activeR: 16 })
+build(document.querySelector('.p-32'),  { gridStep: 64, gridOp: 0.32, axis: false, rows: 2, withChairs: false, polyW: 14, dash: '14 8', dotR: 14, activeR: 20 })
+;(() => {
+  const svg = document.querySelector('.p-16')
+  svg.appendChild(mk('polygon', {
+    points: POLY_PTS.map(p => p.join(',')).join(' '),
+    fill: 'none', stroke: ACCENT, 'stroke-width': 22, 'stroke-linejoin': 'round',
+    'stroke-dasharray': '24 14', 'stroke-linecap': 'round'
+  }))
+  svg.appendChild(mk('rect', { x: 84, y: 120, width: 96, height: 22, rx: 6, fill: ACCENT }))
+})()
+</script>
 
 </body>
 </html>
