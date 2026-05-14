@@ -7,6 +7,7 @@ import { unionShapes, subtractShapes, intersectShapes, mergedType } from '../sha
 import { startCalibration } from '../canvas.js'
 import { solveSeatingZone } from '../solver/index.js'
 import { STYLE_DEFAULTS, TABLE_PRESETS, ROUND_PRESETS, MIXED_TABLE_PRESETS, setLabelDefaults } from '../tools/polygonTool.js'
+import { setDoorDefaults } from '../tools/rectTool.js'
 import { getSetting } from '../settings.js'
 import { escapeAttr } from '../strings.js'
 
@@ -111,7 +112,7 @@ export function initObjectInfo(host) {
         <div class="panel-title">
           <input class="title-input" data-field="name" value="${escapeAttr(objectName(o, room))}" placeholder="${typeLabel}">
         </div>
-        <div class="panel-sub">${typeLabel} · ${kindLabel} · ${o.id.slice(-6)}</div>
+        <div class="panel-sub">${typeLabel} · ${kindLabel}</div>
       </div>
       <div class="panel-section">
         <div class="panel-section-title">Geometry</div>
@@ -164,6 +165,7 @@ export function initObjectInfo(host) {
         </div>
       `}
       ${o.type === 'seating' ? renderSeatingControls(o) : ''}
+      ${o.type === 'door' ? renderDoorControls(o) : ''}
       ${o.kind === 'polygon' ? `
         <div class="panel-section">
           <div class="panel-section-title">Vertices</div>
@@ -267,6 +269,7 @@ export function initObjectInfo(host) {
     const reflectBtn = panel.querySelector('[data-action="reflect"]')
     if (reflectBtn) reflectBtn.addEventListener('click', () => applyReflect())
     if (o.type === 'seating') wireSeatingControls(panel, o)
+    if (o.type === 'door')    wireDoorControls(panel, o)
   }
 }
 
@@ -348,6 +351,80 @@ function renderSeatingControls(o) {
     ${renderSeatLabelControls(o)}
     ${o.style === 'rounds' ? renderTableNumberingControls(o) : ''}
   `
+}
+
+// ── Door controls ────────────────────────────────────────────────────────
+// Edits to swing / opens / hinge / width on a single door also update the
+// session defaults so subsequent doors drawn this session inherit the look.
+
+function renderDoorControls(o) {
+  const w = o.width ?? 72
+  return `
+    <div class="panel-section">
+      <div class="panel-section-title">Door</div>
+      <div class="prop-row"><span class="prop-key">Swing</span>
+        <select class="select-input" data-door="swing">
+          <option value="dual"   ${o.swing === 'dual'   ? 'selected' : ''}>Dual (double door)</option>
+          <option value="single" ${o.swing === 'single' ? 'selected' : ''}>Single</option>
+        </select>
+      </div>
+      <div class="prop-row"><span class="prop-key">Opens</span>
+        <select class="select-input" data-door="opens">
+          <option value="out" ${o.opens === 'out' ? 'selected' : ''}>Outward (default)</option>
+          <option value="in"  ${o.opens === 'in'  ? 'selected' : ''}>Inward</option>
+        </select>
+      </div>
+      ${o.swing !== 'dual' ? `
+        <div class="prop-row"><span class="prop-key">Hinge</span>
+          <select class="select-input" data-door="hinge">
+            <option value="left"  ${o.hinge === 'left'  ? 'selected' : ''}>Left</option>
+            <option value="right" ${o.hinge === 'right' ? 'selected' : ''}>Right</option>
+          </select>
+        </div>
+      ` : ''}
+      <div class="prop-row"><span class="prop-key">Width</span>
+        <input class="prop-input" data-door-inches="width" value="${formatInches(w)}">
+      </div>
+      <p class="panel-hint">Defaults: dual at 6′, single at 3′. Edits become the session default for new doors. Place on the wall using the Door (R) tool.</p>
+    </div>
+  `
+}
+
+function wireDoorControls(panel, o) {
+  panel.querySelectorAll('[data-door]').forEach(inp => {
+    const field = inp.dataset.door
+    inp.addEventListener('change', () => {
+      mutateProject(() => {
+        if (field === 'swing') {
+          o.swing = inp.value
+          // Re-default width when the user flips swing type IF the current
+          // width matches the prior default for that type — otherwise leave
+          // the user's custom value alone.
+          if (inp.value === 'dual'   && (o.width === 36)) o.width = 72
+          if (inp.value === 'single' && (o.width === 72)) o.width = 36
+        }
+        else if (field === 'opens') o.opens = inp.value
+        else if (field === 'hinge') o.hinge = inp.value
+      })
+      setDoorDefaults({ [field]: inp.value })
+    })
+  })
+  panel.querySelectorAll('[data-door-inches]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const v = parseInches(inp.value)
+      if (v == null || v <= 0) return
+      mutateProject(() => {
+        o.width = v
+        // Rebuild the rect dimensions so the threshold and swing both reflect
+        // the new opening. The "long axis" stays the long axis; the short
+        // axis (swing radius) follows opening width 1:1.
+        const horizontal = o.w >= o.h
+        if (horizontal) { o.w = v; o.h = v }
+        else            { o.h = v; o.w = v }
+      })
+      setDoorDefaults({ width: v })
+    })
+  })
 }
 
 function renderSeatLabelControls(o) {
@@ -704,8 +781,11 @@ function wireSeatingControls(panel, o) {
     // honors. Lets the user manually carve egress paths and watch chairs reflow.
     const layout = activeLayout()
     const room   = activeRoom()
+    // Hidden aisles still impact the solve — visibility is a display concern,
+    // not a structural one. Hide an aisle to reduce visual clutter without
+    // breaking the layout it shaped.
     const userAisles = (layout?.objects || [])
-      .filter(a => a.type === 'aisle' && a.kind === 'rect' && !a.hidden)
+      .filter(a => a.type === 'aisle' && a.kind === 'rect')
     // Venue-level objects that physically block seating: walls (the room
     // shell, including pillars jutting in), obstructions (free-standing
     // columns), stages, and tech tables. Floors are skipped — floors are

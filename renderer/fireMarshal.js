@@ -41,6 +41,8 @@ const STRICTNESS = {
   maxSeatsRowTwoAisles: 'min',
   roundsBackToBackMin:  'max',
   stageClearanceMin:    'max',
+  wallClearanceMin:     'max',
+  egressMaxDistance:    'min',
 }
 
 export function getProjectJurisdictions(project) {
@@ -78,7 +80,15 @@ export function runFireMarshal(project, layoutId, activeIds, data) {
     jurisdictions: activeIds.map(id => ({ id, name: data.jurisdictions?.[id]?.name || id })),
     strictest:     {},
     violations:    [],
-    summary:       { errors: 0, warnings: 0, info: 0 },
+    summary:       {
+      errors: 0, warnings: 0, info: 0,
+      // Capacity numbers filled in below — shown prominently in the sheet header
+      // so the user can answer "are we legal?" at a glance.
+      occupancy:      0,    // total solver-placed seats across all visible seating zones
+      egressRequired: 0,    // occupancy × aisleCapacityFactor (inches)
+      egressPresent:  0,    // sum of door widths (inches)
+      egressDeficit:  0,    // max(0, required - present)
+    },
   }
   if (!activeIds.length) {
     result.violations.push({
@@ -118,6 +128,8 @@ export function runFireMarshal(project, layoutId, activeIds, data) {
   const seatingZones = layout.objects.filter(o => o.type === 'seating' && o.kind === 'polygon')
   const aisleObjects = layout.objects.filter(o => o.type === 'aisle'   && o.kind === 'rect')
   const stageObjects = (room?.objects || []).filter(o => o.type === 'stage' && o.kind === 'rect')
+  const wallObjects  = (room?.objects || []).filter(o => o.type === 'walls' && o.kind === 'polygon')
+  const doorObjects  = (room?.objects || []).filter(o => o.type === 'door'  && o.kind === 'rect')
 
   const totalOccupants = seatingZones.reduce((acc, z) => acc + (z.result?.totalSeats || 0), 0)
 
@@ -320,7 +332,131 @@ export function runFireMarshal(project, layoutId, activeIds, data) {
     }
   }
 
+  // ── Occupancy + egress-width totals ─────────────────────────────────────
+  // Occupancy = total placed seats across visible seating zones. Egress width
+  // required = occupancy × aisleCapacityFactor (level egress; stairs use 0.3).
+  // Egress present = sum of door clear widths. Deficit (if any) becomes a
+  // violation tied to the strictest jurisdiction's capacity factor.
+  result.summary.occupancy = totalOccupants
+  const capFactor = result.strictest.aisleCapacityFactor
+  if (capFactor) {
+    result.summary.egressRequired = Math.ceil(totalOccupants * capFactor.value)
+  }
+  result.summary.egressPresent = doorObjects.reduce(
+    (sum, d) => sum + (d.width ?? Math.min(Math.abs(d.w), Math.abs(d.h))),
+    0,
+  )
+  result.summary.egressDeficit = Math.max(
+    0, result.summary.egressRequired - result.summary.egressPresent,
+  )
+  if (capFactor && result.summary.egressDeficit > 0 && totalOccupants > 0) {
+    const c = cite(capFactor)
+    push({
+      severity: 'error',
+      ruleId:   'aisleCapacityFactor',
+      ruleLabel: 'Total egress width',
+      jurisdictionId:   c.id,
+      jurisdictionName: c.name,
+      code:    c.code,
+      message: `${totalOccupants} occupants need ${formatInches(result.summary.egressRequired)} of door egress; ` +
+               `present is ${formatInches(result.summary.egressPresent)} (short by ${formatInches(result.summary.egressDeficit)}).`,
+      anchor:   null,
+      objectId: null,
+    })
+  }
+
+  // ── Wall clearance (seat must clear nearest wall edge) ──────────────────
+  const wcRule = result.strictest.wallClearanceMin
+  if (wcRule && wallObjects.length) {
+    for (const z of seatingZones) {
+      const seats = z.result?.seats || []
+      if (!seats.length) continue
+      let nearest = Infinity, nx = 0, ny = 0
+      for (const seat of seats) {
+        for (const wall of wallObjects) {
+          const verts = wall.vertices
+          for (let i = 0; i < verts.length; i++) {
+            const a = verts[i], b = verts[(i + 1) % verts.length]
+            const d = distancePointToSegment(seat.x, seat.y, a[0], a[1], b[0], b[1])
+            if (d < nearest) { nearest = d; nx = seat.x; ny = seat.y }
+          }
+        }
+      }
+      if (nearest < wcRule.value) {
+        const c = cite(wcRule)
+        push({
+          severity: 'error',
+          ruleId:   'wallClearanceMin',
+          ruleLabel: 'Wall clearance',
+          jurisdictionId:   c.id,
+          jurisdictionName: c.name,
+          code:    c.code,
+          message: `Nearest seat is ${formatInches(Math.round(nearest))} from a wall; min is ${formatInches(wcRule.value)}.`,
+          anchor:   { x: nx, y: ny },
+          objectId: z.id,
+        })
+      }
+    }
+  }
+
+  // ── Egress travel distance (any seat → nearest door) ────────────────────
+  const emdRule = result.strictest.egressMaxDistance
+  if (emdRule) {
+    const limitInches = emdRule.value * 12   // rule.value is feet
+    if (!doorObjects.length && seatingZones.some(z => z.result?.seats?.length)) {
+      const c = cite(emdRule)
+      push({
+        severity: 'warn',
+        ruleId:   'egressMaxDistance',
+        ruleLabel: 'Egress doors',
+        jurisdictionId:   c.id,
+        jurisdictionName: c.name,
+        code:    c.code,
+        message: `No doors placed — egress travel distance can't be validated. Add door objects via the Door tool.`,
+        anchor:   null,
+        objectId: null,
+      })
+    }
+    for (const z of seatingZones) {
+      const seats = z.result?.seats || []
+      if (!seats.length || !doorObjects.length) continue
+      let worst = 0, wx = 0, wy = 0
+      for (const seat of seats) {
+        let nearest = Infinity
+        for (const door of doorObjects) {
+          const cx = door.x + door.w / 2, cy = door.y + door.h / 2
+          const d = Math.hypot(seat.x - cx, seat.y - cy)
+          if (d < nearest) nearest = d
+        }
+        if (nearest > worst) { worst = nearest; wx = seat.x; wy = seat.y }
+      }
+      if (worst > limitInches) {
+        const c = cite(emdRule)
+        push({
+          severity: 'error',
+          ruleId:   'egressMaxDistance',
+          ruleLabel: 'Egress travel distance',
+          jurisdictionId:   c.id,
+          jurisdictionName: c.name,
+          code:    c.code,
+          message: `Furthest seat is ${(worst / 12).toFixed(0)}′ from the nearest door; max is ${emdRule.value}′.`,
+          anchor:   { x: wx, y: wy },
+          objectId: z.id,
+        })
+      }
+    }
+  }
+
   return result
+}
+
+function distancePointToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay
+  const len2 = dx * dx + dy * dy
+  if (len2 === 0) return Math.hypot(px - ax, py - ay)
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2
+  t = Math.max(0, Math.min(1, t))
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 }
 
 function distanceFromPointToRect(px, py, r) {

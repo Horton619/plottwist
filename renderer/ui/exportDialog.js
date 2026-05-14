@@ -23,6 +23,7 @@ const DEFAULTS = {
   scale:         'auto',          // 'auto' | numeric (paper-inches per world-foot)
   dpi:           150,
   includeFireMarshal: true,
+  theme:         'light',         // 'light' (white paper, navy strokes) or 'dark' (matches canvas)
 }
 
 // Scale picker options — Auto + every entry from ENG_SCALES so the dialog
@@ -80,6 +81,7 @@ function loadConfig() {
     }
     if (![72, 150, 300, 600].includes(merged.dpi)) merged.dpi = DEFAULTS.dpi
     if (!['portrait', 'landscape'].includes(merged.orientation)) merged.orientation = DEFAULTS.orientation
+    if (!['light', 'dark'].includes(merged.theme)) merged.theme = DEFAULTS.theme
     return merged
   } catch { return { ...DEFAULTS } }
 }
@@ -161,6 +163,15 @@ function render() {
         </select>
       </div>
 
+      <h4>Theme</h4>
+      <div class="export-row">
+        <span class="export-key">Color theme</span>
+        <select class="select-input" data-cfg="theme">
+          <option value="light" ${cfg.theme === 'light' ? 'selected' : ''}>Light (print — white paper, dark strokes)</option>
+          <option value="dark"  ${cfg.theme === 'dark'  ? 'selected' : ''}>Dark (screen — navy paper, magenta strokes)</option>
+        </select>
+      </div>
+
       <h4>Annotations</h4>
       <label class="export-row export-check">
         <input type="checkbox" data-cfg="includeFireMarshal" ${cfg.includeFireMarshal ? 'checked' : ''} ${fmAvailable ? '' : 'disabled'}>
@@ -229,6 +240,7 @@ async function doExport(kind) {
       paperW: paper.w,
       paperH: paper.h,
       scale:  cfg.scale,
+      theme:  cfg.theme,
       includeFireMarshal: cfg.includeFireMarshal && !!state.fireMarshal?.result,
       fireMarshalResult:  state.fireMarshal?.result || null,
     })

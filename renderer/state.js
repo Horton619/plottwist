@@ -159,6 +159,7 @@ export const TYPE_STYLES = {
   underlay:    { fill: 'none',    fillOpacity: 0,    stroke: 'none',    strokeWidth: 0,   label: 'Underlay' },
   seating:     { fill: '#FF2D9D', fillOpacity: 0.08, stroke: '#FF2D9D', strokeWidth: 1.5, label: 'Seating Zone' },
   dim:         { fill: 'none',    fillOpacity: 0,    stroke: '#5be7d4', strokeWidth: 1,   label: 'Dimension' },
+  door:        { fill: 'none',    fillOpacity: 0,    stroke: '#5be7d4', strokeWidth: 1.5, label: 'Door' },
 }
 
 // Auto-generate a friendly name when an object doesn't have one yet.

@@ -79,12 +79,12 @@ export function collectSnapAnchors(excludeIds = new Set()) {
 // point along a visible object's edges (rect sides, polygon segments, dim
 // lines). Returns the snapped point with its `kind`, or null if nothing is
 // within tolerance. Used by the Dim tool while drawing.
-export function snapPointToAnchors(x, y, tolerance) {
+export function snapPointToAnchors(x, y, tolerance, excludeIds = new Set()) {
   let best = null
   let bestDist = tolerance
 
   // Point anchors first.
-  const anchors = collectSnapAnchors()
+  const anchors = collectSnapAnchors(excludeIds)
   for (const a of anchors) {
     const d = Math.hypot(a.x - x, a.y - y)
     if (d < bestDist) { bestDist = d; best = { x: a.x, y: a.y, kind: a.kind } }
@@ -95,7 +95,7 @@ export function snapPointToAnchors(x, y, tolerance) {
   const layout = activeLayout()
   const all = [...(room?.objects || []), ...(layout?.objects || [])]
   for (const o of all) {
-    if (o.hidden || o.locked) continue
+    if (excludeIds.has(o.id) || o.hidden || o.locked) continue
     for (const [a, b] of getObjectEdges(o)) {
       const cp = closestPointOnSegment([x, y], a, b)
       const d = Math.hypot(cp[0] - x, cp[1] - y)

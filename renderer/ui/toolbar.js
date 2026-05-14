@@ -15,6 +15,7 @@ const TOOL_GROUPS = [
       { id: 'stage',       label: 'Stage',       hint: 'G' },
       { id: 'tech',        label: 'Tech',        hint: 'T' },
       { id: 'walls',       label: 'Walls',       hint: 'W' },
+      { id: 'door',        label: 'Door',        hint: 'R' },
       { id: 'dim',         label: 'Dim',         hint: 'D' },
     ],
   },

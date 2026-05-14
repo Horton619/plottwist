@@ -354,7 +354,7 @@ function onPointerDown(e) {
   }
 
   // All rectangle-based tools (now includes seating).
-  const rectTypes = ['floor', 'aisle', 'obstruction', 'stage', 'tech', 'seating']
+  const rectTypes = ['floor', 'aisle', 'obstruction', 'stage', 'tech', 'seating', 'door']
   if (rectTypes.includes(state.activeTool)) {
     drag = { mode: 'draw-rect' }
     startRectDraw(state.activeTool, [Math.round(w.x), Math.round(w.y)])
@@ -466,7 +466,7 @@ function onPointerMove(e) {
       const oa = ov[i], ob = ov[(i + 1) % n]
       const mx0 = (oa[0] + ob[0]) / 2, my0 = (oa[1] + ob[1]) / 2
       const mx  = mx0 + t * nx,        my  = my0 + t * ny
-      const snap = snapPointToAnchors(mx, my, tol)
+      const snap = snapPointToAnchors(mx, my, tol, new Set([drag.objectId]))
       if (snap) {
         const offsetT = (snap.x - mx) * nx + (snap.y - my) * ny
         t += offsetT
@@ -852,20 +852,25 @@ function renderObject(o) {
     el = buildDimGraphic(o, /* preview */ false)
   } else if (o.kind === 'rect') {
     const s = styleFor(o)
-    el = document.createElementNS(SVG_NS, 'rect')
-    el.setAttribute('x', o.x); el.setAttribute('y', o.y)
-    el.setAttribute('width',  o.w); el.setAttribute('height', o.h)
-    el.setAttribute('fill',         s.fill)
-    el.setAttribute('fill-opacity', s.fillOpacity)
-    el.setAttribute('stroke',       s.stroke)
-    el.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
-    el.setAttribute('vector-effect','non-scaling-stroke')
-    // Aisle rects: wrap with a dim callout so the user always sees the gap.
-    if (o.type === 'aisle') {
-      const g = document.createElementNS(SVG_NS, 'g')
-      g.appendChild(el)
-      g.appendChild(buildAisleDimCallout(o.x, o.y, o.w, o.h, 0, { aisleId: o.id, frac: o.dimLabelFrac ?? 0.5 }))
-      el = g
+    // Doors get a custom architectural symbol (threshold line + swing arcs).
+    if (o.type === 'door') {
+      el = buildDoor(o)
+    } else {
+      el = document.createElementNS(SVG_NS, 'rect')
+      el.setAttribute('x', o.x); el.setAttribute('y', o.y)
+      el.setAttribute('width',  o.w); el.setAttribute('height', o.h)
+      el.setAttribute('fill',         s.fill)
+      el.setAttribute('fill-opacity', s.fillOpacity)
+      el.setAttribute('stroke',       s.stroke)
+      el.setAttribute('stroke-width', s.strokeWidth * pxToWorldDist(1))
+      el.setAttribute('vector-effect','non-scaling-stroke')
+      // Aisle rects: wrap with a dim callout so the user always sees the gap.
+      if (o.type === 'aisle') {
+        const g = document.createElementNS(SVG_NS, 'g')
+        g.appendChild(el)
+        g.appendChild(buildAisleDimCallout(o.x, o.y, o.w, o.h, 0, { aisleId: o.id, frac: o.dimLabelFrac ?? 0.5 }))
+        el = g
+      }
     }
   } else if (o.kind === 'polygon') {
     const s = styleFor(o)
@@ -1280,6 +1285,89 @@ function buildAutoAisles(zone) {
 // Facing arrow showing the zone's forward direction. Drawn OUTSIDE the polygon
 // at the front edge (in local frame, just above minY) so it doesn't fight
 // auto-aisle dim callouts that sit at the polygon centroid.
+// Architectural door symbol — threshold line + door leaf(s) + swing arc(s).
+// The door object's bounding rect frames both:
+//   • LONG axis = opening width (the door panel(s) span this)
+//   • SHORT axis = swing radius (= panel length, since panel pivots through 90°)
+// `opens` ('out' | 'in') flips which side of the threshold the swing arc sits on.
+// `swing` ('single' | 'dual') chooses panel count. `hinge` ('left' | 'right')
+// picks the pivot side for single doors. Fire marshal uses the door's center
+// only — this symbol is purely visual.
+function buildDoor(o) {
+  const g = document.createElementNS(SVG_NS, 'g')
+  const horizontal = o.w >= o.h
+  const openW = horizontal ? o.w : o.h
+  const swingR = horizontal ? o.h : o.w
+
+  // Threshold endpoints and the unit vector pointing INTO the swing side.
+  let a, b, swingDir
+  if (horizontal) {
+    const y0 = o.opens === 'out' ? o.y + o.h : o.y
+    a = [o.x, y0]; b = [o.x + openW, y0]
+    swingDir = o.opens === 'out' ? [0, -1] : [0, 1]
+  } else {
+    const x0 = o.opens === 'out' ? o.x + o.w : o.x
+    a = [x0, o.y]; b = [x0, o.y + openW]
+    swingDir = o.opens === 'out' ? [-1, 0] : [1, 0]
+  }
+
+  const thr = document.createElementNS(SVG_NS, 'line')
+  thr.setAttribute('x1', a[0]); thr.setAttribute('y1', a[1])
+  thr.setAttribute('x2', b[0]); thr.setAttribute('y2', b[1])
+  thr.setAttribute('stroke', BRAND.chair); thr.setAttribute('stroke-width', pxToWorldDist(3))
+  thr.setAttribute('vector-effect', 'non-scaling-stroke')
+  g.appendChild(thr)
+
+  if (o.swing === 'dual') {
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+    g.appendChild(doorPanel(a,   mid, swingDir))
+    g.appendChild(doorPanel(b,   mid, swingDir))
+  } else {
+    const hinge  = o.hinge === 'right' ? b : a
+    const closed = o.hinge === 'right' ? a : b
+    g.appendChild(doorPanel(hinge, closed, swingDir))
+  }
+  return g
+}
+
+// One door panel: solid leaf line from hinge to open position + dashed
+// quarter-arc tracing the swing from open back to closed.
+//   hinge:  pivot point on the threshold
+//   closed: where the door panel tip rests when fully closed (on the threshold)
+//   swingDir: unit vector pointing perpendicular to the threshold, into the
+//             side the door opens toward
+function doorPanel(hinge, closed, swingDir) {
+  const g = document.createElementNS(SVG_NS, 'g')
+  const dx = closed[0] - hinge[0], dy = closed[1] - hinge[1]
+  const panelLen = Math.hypot(dx, dy)
+  if (!panelLen) return g
+  // Open position = hinge + swingDir * panelLen (perpendicular at full 90°).
+  const openX = hinge[0] + swingDir[0] * panelLen
+  const openY = hinge[1] + swingDir[1] * panelLen
+
+  const leaf = document.createElementNS(SVG_NS, 'line')
+  leaf.setAttribute('x1', hinge[0]); leaf.setAttribute('y1', hinge[1])
+  leaf.setAttribute('x2', openX);    leaf.setAttribute('y2', openY)
+  leaf.setAttribute('stroke', BRAND.chair); leaf.setAttribute('stroke-width', pxToWorldDist(1.5))
+  leaf.setAttribute('vector-effect', 'non-scaling-stroke')
+  g.appendChild(leaf)
+
+  // Sweep flag chosen so the quarter-arc bows toward the swing side rather
+  // than away. cross(closed-dir, swingDir) sign picks the right rotation.
+  const cross = dx * swingDir[1] - dy * swingDir[0]
+  const sweep = cross > 0 ? 0 : 1
+  const arc = document.createElementNS(SVG_NS, 'path')
+  arc.setAttribute('d', `M ${openX} ${openY} A ${panelLen} ${panelLen} 0 0 ${sweep} ${closed[0]} ${closed[1]}`)
+  arc.setAttribute('fill', 'none')
+  arc.setAttribute('stroke', BRAND.chair)
+  arc.setAttribute('stroke-width', pxToWorldDist(0.8))
+  arc.setAttribute('stroke-dasharray', '4 3')
+  arc.setAttribute('vector-effect', 'non-scaling-stroke')
+  arc.setAttribute('opacity', 0.7)
+  g.appendChild(arc)
+  return g
+}
+
 function buildFacingArrow(zone) {
   // Centroid in world coords.
   let cx = 0, cy = 0

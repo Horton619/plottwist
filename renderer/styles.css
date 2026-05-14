@@ -1338,6 +1338,21 @@ body.alt-held .sel-midhandle { cursor: copy !important; }
   color: var(--text-dim);
 }
 
+.fm-capacity {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.fm-capacity-cell {
+  background: var(--bg-panel);
+  padding: 8px 10px;
+  display: flex; flex-direction: column;
+}
+.fm-capacity-key { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.fm-capacity-val { font-size: 15px; font-weight: 600; color: var(--text); margin-top: 2px; }
+.fm-capacity-bad .fm-capacity-val { color: var(--violation); }
+
 .fm-summary {
   display: flex; gap: 10px;
   padding: 8px 14px;

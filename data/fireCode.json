@@ -44,6 +44,18 @@
       "unit": "in",
       "appliesTo": ["theater", "classroom", "mixed", "rounds"],
       "description": "Clearance between the leading edge of the stage and the nearest chair / table."
+    },
+    "wallClearanceMin": {
+      "label": "Min clearance seat to wall",
+      "unit": "in",
+      "appliesTo": ["theater", "classroom", "mixed", "rounds"],
+      "description": "Minimum distance from any seat to the nearest wall. Without this, a seated occupant against the wall must traverse the entire row to reach an aisle — fails most egress codes."
+    },
+    "egressMaxDistance": {
+      "label": "Max travel distance to door",
+      "unit": "ft",
+      "appliesTo": ["theater", "classroom", "mixed", "rounds"],
+      "description": "Longest straight-line distance from any seat to the nearest door. Approximates IBC 1017.2 travel distance — actual path may exceed this when obstructions force a detour."
     }
   },
 
@@ -58,7 +70,9 @@
         "maxSeatsRowOneAisle":  { "value": 14,   "code": "IBC 1029.9.1",                   "verify": true, "note": "Single-aisle row." },
         "maxSeatsRowTwoAisles": { "value": 100,  "code": "IBC 1029.9.2",                   "verify": true, "note": "Both-end aisle access; smart-aisle rules can exceed this if egress sized accordingly." },
         "roundsBackToBackMin":  { "value": 60,   "code": "Banquet planning convention",    "verify": true, "note": "Industry-standard 5′ minimum; 6′ preferred for high-density events." },
-        "stageClearanceMin":    { "value": 60,   "code": "Banquet planning convention",    "verify": true, "note": "5′ standoff to front row." }
+        "stageClearanceMin":    { "value": 60,   "code": "Banquet planning convention",    "verify": true, "note": "5′ standoff to front row." },
+        "wallClearanceMin":     { "value": 36,   "code": "CCC 14B-10-1017 / IBC 1017",     "verify": true, "note": "Egress access for the wall-side occupant of a row." },
+        "egressMaxDistance":    { "value": 200,  "code": "IBC 1017.2",                     "verify": true, "note": "Straight-line approximation of travel-distance limit." }
       }
     },
 
@@ -72,7 +86,9 @@
         "maxSeatsRowOneAisle":  { "value": 14,   "code": "IBC 1029.9.1",         "verify": true, "note": "" },
         "maxSeatsRowTwoAisles": { "value": 100,  "code": "IBC 1029.9.2",         "verify": true, "note": "" },
         "roundsBackToBackMin":  { "value": 60,   "code": "Convention",           "verify": true, "note": "" },
-        "stageClearanceMin":    { "value": 60,   "code": "Convention",           "verify": true, "note": "" }
+        "stageClearanceMin":    { "value": 60,   "code": "Convention",           "verify": true, "note": "" },
+        "wallClearanceMin":     { "value": 36,   "code": "IBC 1017",              "verify": true, "note": "Egress access." },
+        "egressMaxDistance":    { "value": 200,  "code": "IBC 1017.2",            "verify": true, "note": "" }
       }
     },
 
@@ -86,7 +102,9 @@
         "maxSeatsRowOneAisle":  { "value": 14,   "code": "FBC 1029.9.1",         "verify": true, "note": "" },
         "maxSeatsRowTwoAisles": { "value": 100,  "code": "FBC 1029.9.2",         "verify": true, "note": "" },
         "roundsBackToBackMin":  { "value": 60,   "code": "Convention",           "verify": true, "note": "" },
-        "stageClearanceMin":    { "value": 60,   "code": "Convention",           "verify": true, "note": "" }
+        "stageClearanceMin":    { "value": 60,   "code": "Convention",           "verify": true, "note": "" },
+        "wallClearanceMin":     { "value": 36,   "code": "FBC 1017",              "verify": true, "note": "Egress access." },
+        "egressMaxDistance":    { "value": 200,  "code": "FBC 1017.2",            "verify": true, "note": "" }
       }
     },
 
@@ -100,7 +118,9 @@
         "maxSeatsRowOneAisle":  { "value": 14,   "code": "CBC 1029.9.1",         "verify": true, "note": "" },
         "maxSeatsRowTwoAisles": { "value": 100,  "code": "CBC 1029.9.2",         "verify": true, "note": "" },
         "roundsBackToBackMin":  { "value": 72,   "code": "CA hospitality convention", "verify": true, "note": "CA event spaces commonly enforce 6′ round-to-round." },
-        "stageClearanceMin":    { "value": 72,   "code": "CA hospitality convention", "verify": true, "note": "" }
+        "stageClearanceMin":    { "value": 72,   "code": "CA hospitality convention", "verify": true, "note": "" },
+        "wallClearanceMin":     { "value": 36,   "code": "CBC 1017",                  "verify": true, "note": "Egress access; CA often enforces stricter." },
+        "egressMaxDistance":    { "value": 200,  "code": "CBC 1017.2",                "verify": true, "note": "" }
       }
     }
   }

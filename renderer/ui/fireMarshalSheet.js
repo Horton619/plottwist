@@ -104,6 +104,34 @@ function render() {
     : ''
 
   const summary = result.summary
+  const fmtIn = (n) => {
+    const ft = Math.floor(n / 12)
+    const inch = Math.round(n - ft * 12)
+    if (!ft) return `${inch}″`
+    return inch ? `${ft}′-${inch}″` : `${ft}′-0″`
+  }
+  const capacityLine = noJurisdictions ? '' : `
+    <div class="fm-capacity">
+      <div class="fm-capacity-cell">
+        <span class="fm-capacity-key">Occupancy</span>
+        <span class="fm-capacity-val">${summary.occupancy}</span>
+      </div>
+      <div class="fm-capacity-cell">
+        <span class="fm-capacity-key">Egress required</span>
+        <span class="fm-capacity-val">${summary.egressRequired ? fmtIn(summary.egressRequired) : '—'}</span>
+      </div>
+      <div class="fm-capacity-cell ${summary.egressDeficit ? 'fm-capacity-bad' : ''}">
+        <span class="fm-capacity-key">Egress present</span>
+        <span class="fm-capacity-val">${summary.egressPresent ? fmtIn(summary.egressPresent) : '—'}</span>
+      </div>
+      ${summary.egressDeficit ? `
+        <div class="fm-capacity-cell fm-capacity-bad">
+          <span class="fm-capacity-key">Shortfall</span>
+          <span class="fm-capacity-val">${fmtIn(summary.egressDeficit)}</span>
+        </div>
+      ` : ''}
+    </div>
+  `
   const summaryLine = noJurisdictions ? '' : `
     <div class="fm-summary">
       <span class="fm-count fm-err">${summary.errors} ${summary.errors === 1 ? 'violation' : 'violations'}</span>
@@ -134,7 +162,7 @@ function render() {
     </div>
   `
 
-  sheetEl.innerHTML = `${header}${jurisdictionsLine}${summaryLine}<div class="fm-list">${list}</div>${footer}`
+  sheetEl.innerHTML = `${header}${jurisdictionsLine}${capacityLine}${summaryLine}<div class="fm-list">${list}</div>${footer}`
 
   sheetEl.querySelector('[data-action="close"]')?.addEventListener('click', closeSheet)
   sheetEl.querySelector('[data-action="rerun"]')?.addEventListener('click', runAndShow)

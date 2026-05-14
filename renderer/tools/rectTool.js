@@ -52,6 +52,30 @@ export function endRectDraw() {
         vertices: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]],
         ...defaultSeatingZoneFields(),
       }
+    } else if (dr.type === 'door') {
+      // Door is a rect; the long axis is the opening width, the short axis
+      // is the swing radius. Override drag dimensions with the session
+      // defaults: drag direction picks orientation, rest comes from the
+      // last-set door spec.
+      const spec = { ...getDoorDefaults() }
+      const widthIn = spec.width
+      const isHorizontal = w >= h
+      const ww = isHorizontal ? widthIn : widthIn   // opening width
+      const dd = widthIn                            // swing radius == width (90° quarter circle)
+      // Position the door so the drag start point is at the door's threshold
+      // midpoint when possible; for now keep the user's rect origin.
+      const ox = isHorizontal ? x : x
+      const oy = isHorizontal ? y : y
+      obj = {
+        id, kind: 'rect', type: 'door',
+        x: ox, y: oy,
+        w: isHorizontal ? ww : dd,
+        h: isHorizontal ? dd : ww,
+        width:  widthIn,
+        swing:  spec.swing,
+        opens:  spec.opens,
+        hinge:  spec.hinge,
+      }
     } else {
       obj = { id, kind: 'rect', type: dr.type, x, y, w, h }
     }
@@ -70,6 +94,24 @@ export function endRectDraw() {
     }
   })
   setState({ selection: [id], activeTool: 'select' })
+}
+
+// Session defaults for new doors. Initial: dual swing, 6′ wide, opens out.
+// When the user edits a door's width / swing in Object Info, those values
+// become the new defaults for subsequent doors drawn this session.
+let SESSION_DOOR_DEFAULTS = {
+  width: 72,           // inches; 6′ dual default per user spec (3′ for single)
+  swing: 'dual',
+  opens: 'out',
+  hinge: 'left',
+}
+export function getDoorDefaults()       { return { ...SESSION_DOOR_DEFAULTS } }
+export function setDoorDefaults(patch)  {
+  SESSION_DOOR_DEFAULTS = { ...SESSION_DOOR_DEFAULTS, ...patch }
+  // Default width reflects current swing if width wasn't explicitly set.
+  if (patch.swing && patch.width == null) {
+    SESSION_DOOR_DEFAULTS.width = patch.swing === 'dual' ? 72 : 36
+  }
 }
 
 // Defaults for a freshly-drawn theater seating zone. Mirrors the polygon-tool

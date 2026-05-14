@@ -20,6 +20,36 @@ import { formatDimLength } from './units.js'
 import { BRAND, ANNOT } from './colors.js'
 import { clusterSeatsByProximity } from './solver/geom.js'
 
+// Active palette — set at the top of buildExportSVG based on cfg.theme, read
+// by every serializer. Light is the print-friendly default (white paper,
+// dark-navy strokes); dark mirrors the canvas (navy bg, magenta strokes).
+const LIGHT_PAL = {
+  bg:           '#ffffff',
+  sheetBorder:  '#999999',
+  chair:        '#1a2942',   // dark navy / primary blue — replaces brand magenta on light
+  chairFill:    '#1a2942',
+  tableFill:    '#f4f4f8',
+  violation:    '#FF3B30',
+  dim:          ANNOT.dim.paper,
+  aisle:        ANNOT.aisle.paper,
+  text:         '#1a2942',
+  textFaint:    '#6b7385',
+}
+const DARK_PAL = {
+  bg:           '#070910',
+  sheetBorder:  '#3a4256',
+  chair:        BRAND.chair,
+  chairFill:    BRAND.chair,
+  tableFill:    BRAND.tableFill,
+  violation:    BRAND.violation,
+  dim:          ANNOT.dim.canvas,
+  aisle:        ANNOT.aisle.canvas,
+  text:         '#e8ebf3',
+  textFaint:    '#aab0c0',
+}
+function paletteFor(theme) { return theme === 'dark' ? DARK_PAL : LIGHT_PAL }
+let PAL = LIGHT_PAL   // overwritten by buildExportSVG
+
 // ── Public API ────────────────────────────────────────────────────────────
 
 export const PAPER_PRESETS = {
@@ -59,7 +89,9 @@ export function buildExportSVG(opts = {}) {
     scale:                opts.scale ?? 'auto',         // 'auto' or paper-inch/world-foot
     includeFireMarshal:   !!opts.includeFireMarshal,
     fireMarshalResult:    opts.fireMarshalResult || null,
+    theme:                opts.theme === 'dark' ? 'dark' : 'light',
   }
+  PAL = paletteFor(cfg.theme)
 
   // Layout extent in world-inches — pad by 2' so chairs at the edge breathe.
   const allObjects = [...room.objects, ...layout.objects].filter(o => !o.hidden)
@@ -87,10 +119,9 @@ export function buildExportSVG(opts = {}) {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${cfg.paperW}in" height="${cfg.paperH}in" ` +
     `viewBox="0 0 ${cfg.paperW} ${cfg.paperH}" font-family="-apple-system, BlinkMacSystemFont, Inter, Segoe UI, system-ui, sans-serif">`
   )
-  // White background.
-  parts.push(`<rect x="0" y="0" width="${cfg.paperW}" height="${cfg.paperH}" fill="#fff"/>`)
-  // Sheet outline + drawing area outline.
-  parts.push(`<rect x="${cfg.margin}" y="${cfg.margin}" width="${drawW}" height="${drawH}" fill="none" stroke="#999" stroke-width="0.01"/>`)
+  // Paper / sheet outline — theme-aware.
+  parts.push(`<rect x="0" y="0" width="${cfg.paperW}" height="${cfg.paperH}" fill="${PAL.bg}"/>`)
+  parts.push(`<rect x="${cfg.margin}" y="${cfg.margin}" width="${drawW}" height="${drawH}" fill="none" stroke="${PAL.sheetBorder}" stroke-width="0.01"/>`)
 
   // Drawing — world coords inside this group.
   parts.push(`<g transform="translate(${drawX} ${drawY}) scale(${scale}) translate(${-wb.x} ${-wb.y})">`)
@@ -309,21 +340,21 @@ function serializeTable(table) {
   const transform = `translate(${table.x} ${table.y}) rotate(${table.rotation || 0})`
   if (isRound) {
     if (table.chairD) {
-      out.push(`<g transform="${transform}"><circle cx="0" cy="0" r="${w / 2 + table.chairD}" fill="none" stroke="${BRAND.chair}" stroke-opacity="0.28" stroke-width="${SW.hair}" stroke-dasharray="3 3"/></g>`)
+      out.push(`<g transform="${transform}"><circle cx="0" cy="0" r="${w / 2 + table.chairD}" fill="none" stroke="${PAL.chair}" stroke-opacity="0.28" stroke-width="${SW.hair}" stroke-dasharray="3 3"/></g>`)
     }
     out.push(`<g transform="${transform}">
-      <circle cx="0" cy="0" r="${w / 2}" fill="${BRAND.tableFill}" stroke="${BRAND.chair}" stroke-width="${SW.med}"/>
+      <circle cx="0" cy="0" r="${w / 2}" fill="${PAL.tableFill}" stroke="${PAL.chair}" stroke-width="${SW.med}"/>
     </g>`)
   } else {
     out.push(`<g transform="${transform}">
-      <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="2" fill="${BRAND.tableFill}" stroke="${BRAND.chair}" stroke-width="${SW.med}"/>
+      <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="2" fill="${PAL.tableFill}" stroke="${PAL.chair}" stroke-width="${SW.med}"/>
     </g>`)
   }
   // Centered size label, in feet.
   const ft = w / 12
   const ftLabel = (Math.abs(ft - Math.round(ft)) < 0.05) ? `${Math.round(ft)}'` : `${ft.toFixed(1)}'`
   const fontSize = isRound ? Math.min(w * 0.18, 12) : Math.min(d * 0.55, 9)
-  out.push(`<g transform="${transform}"><text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="${BRAND.chair}" opacity="0.55">${escapeText(ftLabel)}</text></g>`)
+  out.push(`<g transform="${transform}"><text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" fill="${PAL.chair}" opacity="0.55">${escapeText(ftLabel)}</text></g>`)
   return out.join('')
 }
 
@@ -331,8 +362,8 @@ function serializeChair(seat) {
   const w = seat.w, d = seat.d
   const transform = `translate(${seat.x} ${seat.y}) rotate(${seat.rotation || 0})`
   return `<g transform="${transform}">
-    <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="1.5" fill="${BRAND.chair}" fill-opacity="0.32" stroke="${BRAND.chair}" stroke-width="${SW.hair}"/>
-    <line x1="${-w / 2}" y1="${d / 2}" x2="${w / 2}" y2="${d / 2}" stroke="${BRAND.chair}" stroke-width="${SW.heavy}" stroke-linecap="round"/>
+    <rect x="${-w / 2}" y="${-d / 2}" width="${w}" height="${d}" rx="1.5" fill="${PAL.chair}" fill-opacity="0.32" stroke="${PAL.chair}" stroke-width="${SW.hair}"/>
+    <line x1="${-w / 2}" y1="${d / 2}" x2="${w / 2}" y2="${d / 2}" stroke="${PAL.chair}" stroke-width="${SW.heavy}" stroke-linecap="round"/>
   </g>`
 }
 
@@ -405,7 +436,7 @@ function serializeFireMarshalCallouts(result, drawX, drawY, scale, wb) {
     const py = drawY + (v.anchor.y - wb.y) * scale
     const r = 0.13     // paper inches — ~9pt circle
     out.push(`<g class="fm-callout">
-      <circle cx="${px}" cy="${py}" r="${r}" fill="${BRAND.violation}" stroke="#fff" stroke-width="0.015"/>
+      <circle cx="${px}" cy="${py}" r="${r}" fill="${PAL.violation}" stroke="#fff" stroke-width="0.015"/>
       <text x="${px}" y="${py}" text-anchor="middle" dominant-baseline="central" font-size="${r * 1.5}" font-weight="700" fill="#fff">${v.id}</text>
     </g>`)
   }
