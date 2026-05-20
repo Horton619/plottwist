@@ -70,6 +70,8 @@ function solveStraight(zone, opts) {
   // continuous angled line of tables anchored at the aisle edge; chair offsets
   // rotate with their parent table so chairs stay locked to their seat.
   const chevron      = !!zone.chevron
+  // ⚠ DO NOT clamp to [0, 45] — see docs/SOLVER.md (reflect-across-
+  // centerline flips the sign).
   const chevronAngle = Math.max(-45, Math.min(45, zone.chevronAngle ?? 15))
 
   // Section cap for the per-section table count AND the auto-aisle spacing.

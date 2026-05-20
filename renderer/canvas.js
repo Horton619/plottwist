@@ -1,6 +1,23 @@
-// SVG canvas: scene graph, pan/zoom, render, hit-testing.
-// World units = inches. The SVG viewBox itself is expressed in inches so the
-// math is simple — pan = shift viewBox origin, zoom = scale viewBox dimensions.
+// ─────────────────────────────────────────────────────────────────────────
+// SVG canvas: render loop, pointer dispatch, drag modes, hit-testing.
+// World units = inches; viewBox is in inches so pan = shift origin,
+// zoom = scale dimensions.
+//
+// ⚠ Read docs/CANVAS_AND_SNAP.md before editing.
+//
+// Owns: every `build*` helper (chair, table, door, aisle dim, facing
+// arrow, seat-count chip), grid, guides, fire-marshal callouts, handle
+// layer (corner/vertex/mid-edge), and the pointer dispatch chain.
+//
+// Key invariants:
+//   • `onPointerDown` priority order is LOAD-BEARING. Don't reorder.
+//   • Mid-edge handles drag the WHOLE EDGE perpendicular on bare click;
+//     alt+click inserts a vertex. Right-click on an edge also inserts.
+//   • `vector-effect="non-scaling-stroke"` strokes interpret
+//     `stroke-dasharray` in SCREEN PIXELS — don't multiply by
+//     `pxToWorldDist` on those.
+//   • Layout objects render ON TOP of room (venue) objects.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { state, setState, subscribe, mutateProject, activeRoom, activeLayout, selectedObjects, styleFor, uid, beginTransaction, endTransaction } from './state.js'
 import { objectBounds, unionBounds, hitTest, distToSegment, snapToAxis } from './geom.js'
@@ -703,9 +720,8 @@ function renderGuides() {
     line.setAttribute('x2', cl.x); line.setAttribute('y2', yBot)
     line.setAttribute('stroke', cl.color || BRAND.centerline)
     line.setAttribute('stroke-width', pxToWorldDist(cl.thickness ?? 1.5))
-    // With vector-effect=non-scaling-stroke, dasharray is interpreted in
-    // screen pixels — keep these as constants so dashes look the same at any
-    // zoom. (Earlier code multiplied by pxToWorldDist which double-counted.)
+    // ⚠ DO NOT multiply by pxToWorldDist — NSS interprets dasharray in
+    // SCREEN pixels, multiplying double-counts zoom. See docs/CANVAS_AND_SNAP.md.
     line.setAttribute('stroke-dasharray', '8 4')
     line.setAttribute('vector-effect', 'non-scaling-stroke')
     line.setAttribute('opacity', 0.7)

@@ -1,13 +1,24 @@
+// ─────────────────────────────────────────────────────────────────────────
 // Solver dispatch — picks a style-specific solver, returns a uniform shape.
+//
+// ⚠ Read docs/SOLVER.md before editing any solver/* file.
 //
 // Result shape (fields a style may omit):
 //   {
 //     rows:       [{ index, y, count }],
 //     seats:      [{ x, y, w, d, rotation, row }],   // chair rects
-//     tables:     [{ x, y, w, d, rotation, row }],   // table rects (classroom)
+//     tables:     [{ x, y, w, d, rotation, row }],   // table rects
 //     totalSeats: number,
 //     warnings:   string[],
+//     optimizedDepth?: number,   // mixed only
 //   }
+//
+// Key invariants:
+//   • All solvers run in the zone's LOCAL frame (rotation-aligned).
+//   • Obstructions are tagged 'fill' or 'edge' via tagObstructions()
+//     before being passed to itemTouchesAny.
+//   • `opts.userAisles` is NOT filtered for `!a.hidden` — hidden ≠ removed.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { solveTheater }   from './theaterSolver.js'
 import { solveClassroom } from './classroomSolver.js'

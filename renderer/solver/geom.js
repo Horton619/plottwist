@@ -1,5 +1,25 @@
-// Shared geometry for seating solvers. All math runs in the zone's facing-up
-// frame: the user's facing direction (zone.rotation, 0=up) points up.
+// ─────────────────────────────────────────────────────────────────────────
+// Shared geometry for seating solvers. All math runs in the zone's
+// facing-up local frame — `zone.rotation` is the user's facing direction
+// (0 = up), and `intoLocalFrame()` rotates polygon vertices by
+// `-zone.rotation` around the centroid so the zone faces "up" for math.
+//
+// ⚠ Read docs/SOLVER.md before editing.
+//
+// Owns: `intoLocalFrame` / `localToWorld` / `worldToLocal`, scan-line
+// `horizontalSpans` + `subtractRanges` (aisle cuts with justify tags),
+// `tagObstructions` (fill vs edge mode), `itemTouchesAny`,
+// `placedItemCorners`, `clusterSeatsByProximity` (for seat-count labels),
+// `computeAislePositions` / `computeShiftedRoundAislePositions`.
+//
+// Key invariants:
+//   • Walls go through `tagObstructions` with mode='edge' — only the
+//     polygon stroke blocks, not the interior. Pillars / stages / tech
+//     stay mode='fill'.
+//   • Justify tags ('left' / 'right' / 'center') on each span tell the
+//     placement loop which edge to pack chairs flush against — load-bearing
+//     for chevron + aisle math.
+// ─────────────────────────────────────────────────────────────────────────
 
 export function centroid(verts) {
   let sx = 0, sy = 0

@@ -1,3 +1,32 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Renderer entry point. Bootstrap, file open/save, global keyboard
+// shortcuts, paste/duplicate routing, pane splitters, auto-updater UI.
+//
+// ⚠ Read docs/STATE.md before editing migrations or paste/duplicate;
+//   docs/RELEASES.md for `bindAutoUpdater` and the update banner.
+//
+// Owns:
+//   • Bootstrap: seed initial room/layout; run all migrations
+//     (project-level origin/centerline → per-room v2; stray layout
+//     objects in venue → layout 1).
+//   • newProject / openProject / saveProject (v2 file format).
+//   • `pasteShapes` / `duplicateObjectById` — type-aware container routing
+//     via LAYOUT_OBJECT_TYPES.
+//   • Keyboard: tools (V/F/A/O/G/T/W/D/R/S), ⌘C/⌘X/⌘V on shapes, undo/redo.
+//   • `bindAutoUpdater` — single-channel update-status fan-in to the
+//     top-of-window banner + a CustomEvent for the Settings tab.
+//   • Sidebar / info pane splitters (drag to resize, persists to
+//     localStorage).
+//
+// Key invariants:
+//   • `migrateStrayLayoutObjects` runs on bootstrap AND on every
+//     openProject. Layout-type objects in `room.objects` are silently
+//     moved to layout 1 with a console warning. Never push them there
+//     directly — fix the upstream code path instead.
+//   • SAFE_DATA_IMG regex in openProject is load-bearing security check;
+//     don't widen it.
+// ─────────────────────────────────────────────────────────────────────────
+
 // PlotTwist — renderer entry point. Wires modules + global keyboard shortcuts.
 
 import { state, setState, subscribe, mutateProject, markClean, uid, activeRoom, activeLayout, undo, redo, clearHistory, beginTransaction, endTransaction } from './state.js'
@@ -452,6 +481,9 @@ async function openProject() {
     // anything in the renderer ever passes the src to a navigator (window.open,
     // <a href>, etc.), that runs as code. Reject anything that isn't a known
     // image data URL on load.
+    // ⚠ DO NOT widen this regex. A `.ptwist` file with `data:text/html` or
+    // `javascript:` smuggled into an underlay src would execute if anything
+    // ever passed the src to window.open / <a href>. See docs/STATE.md.
     const SAFE_DATA_IMG = /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/i
     for (const room of data.rooms) {
       const allObjs = [...(room.objects || []), ...(room.layouts || []).flatMap(l => l.objects || [])]
@@ -612,9 +644,9 @@ function pasteShapes() {
       dup.id = uid('obj')
       newIds.push(dup.id)
       offsetObject(dup, PASTE_OFFSET_INCHES, PASTE_OFFSET_INCHES)
-      // Route by type. Seating / aisle / dim live on layouts; everything
-      // else (floor, walls, stage, tech, obstruction, underlay images) on
-      // the room. Falls back to room.objects only if no active layout.
+      // ⚠ DO NOT push by container without checking dup.type. A pre-fix
+      // version of this loop pasted everything to room.objects and silently
+      // stranded seating zones in the venue. See docs/STATE.md.
       if (LAYOUT_OBJECT_TYPES.has(dup.type) && layout) layout.objects.push(dup)
       else                                              room.objects.push(dup)
     }

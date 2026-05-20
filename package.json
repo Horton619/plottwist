@@ -1,6 +1,6 @@
 {
   "name": "plottwist",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Seating layout calculator and visualizer for live event planning — Visual Entropy Productions",
   "main": "main.js",
   "homepage": "https://veproductions.net",

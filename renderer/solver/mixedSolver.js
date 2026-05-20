@@ -1,10 +1,24 @@
-// Mixed solver — front section is classroom (closer to stage), back section
-// is theater. The user controls how deep the classroom region is via
-// `zone.classroomDepth` (inches from the front of the polygon's local frame).
+// ─────────────────────────────────────────────────────────────────────────
+// Mixed solver — front classroom + back theater, vertically split at
+// `zone.classroomDepth` from the local-frame front. Calls solveClassroom
+// and solveTheater directly (bypassing the dispatcher) with inner zone
+// configs that pin classroom section width to whatever the theater rows
+// use so auto-aisles line up cleanly through both regions.
 //
-// v1 keeps it manual: no auto-optimization for "max classroom" / "max theater"
-// / "exact count" yet — those iterate the split point and pick the best fit.
-// For now the user dials the depth and sees the live count.
+// ⚠ Read docs/SOLVER.md before editing.
+//
+// Key invariants:
+//   • Inner solves run UNCONSTRAINED (`preference: 'max', target: undefined`)
+//     so the optimizer can measure full counts at each depth.
+//   • Optimizer mode (`zone.preference === 'exact'`) iterates classroom
+//     row counts and picks the depth nearest the goal; writes the chosen
+//     depth back as `optimizedDepth` for the UI to display.
+//   • Transition gap is measured from the LAST classroom table's
+//     audience-side edge to the FIRST theater chair's stage-side edge —
+//     NOT from `splitY`. Computing from splitY leaves a row-pitch
+//     leftover and the rendered gap was wrong (~9' instead of 6').
+//   • Aisle-split mixed rows are explicitly out of scope. Same style per row.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { intoLocalFrame, bbox } from './geom.js'
 import { solveTheater }   from './theaterSolver.js'

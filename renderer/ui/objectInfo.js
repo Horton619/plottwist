@@ -1,4 +1,27 @@
+// ─────────────────────────────────────────────────────────────────────────
 // Right panel: live properties of the current selection.
+//
+// ⚠ Read docs/STATE.md (for paste/duplicate routing + reflect-across-
+//   centerline) and docs/SOLVER.md (for the Solve button's userAisles +
+//   obstructions collection) before editing.
+//
+// Every per-object UI control lives here — the file gets large because
+// it's the union of all editor surfaces:
+//   • Multi-select panel: total area + combined seats + boolean ops
+//   • Single-object panel: geometry / style / type-specific controls
+//   • Seating-zone controls (theater / classroom / rounds / mixed)
+//   • Seat-count label controls (session default propagation)
+//   • Door controls (session default propagation)
+//   • Reflect-across-centerline action
+//
+// Key invariants:
+//   • `applyReflect` keeps the original's container — venue→venue,
+//     layout→layout. The userAisles filter in `Solve` does NOT exclude
+//     hidden aisles — hidden ≠ removed.
+//   • Edits to seatCountLabel / door fields call `setLabelDefaults` /
+//     `setDoorDefaults` so the session default propagates to the next
+//     newly-created object.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { state, setState, subscribe, mutateProject, selectedObjects, TYPE_STYLES, styleFor, objectName, activeRoom, activeLayout, uid } from '../state.js'
 import { objectBounds, objectArea } from '../geom.js'
@@ -781,9 +804,9 @@ function wireSeatingControls(panel, o) {
     // honors. Lets the user manually carve egress paths and watch chairs reflow.
     const layout = activeLayout()
     const room   = activeRoom()
-    // Hidden aisles still impact the solve — visibility is a display concern,
-    // not a structural one. Hide an aisle to reduce visual clutter without
-    // breaking the layout it shaped.
+    // ⚠ DO NOT add `&& !a.hidden` to this filter. Hidden ≠ removed. The
+    // aisle still shaped the layout; visibility is a render concern only.
+    // See docs/SOLVER.md.
     const userAisles = (layout?.objects || [])
       .filter(a => a.type === 'aisle' && a.kind === 'rect')
     // Venue-level objects that physically block seating: walls (the room

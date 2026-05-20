@@ -1,21 +1,24 @@
-// fireMarshal.js — fire-code validator.
+// ─────────────────────────────────────────────────────────────────────────
+// Fire-code validator. On demand (Tools → Fire Marshal Check…) evaluates
+// the active layout against the strictest active jurisdiction(s) and
+// returns violations + a capacity bar (occupancy / egress required /
+// present / shortfall).
 //
-// On demand (Tools → Fire Marshal Check…) this evaluates the active layout
-// against the strictest active jurisdiction(s) and returns a list of
-// violations, each with a citation, a human message, and a world-coord
-// anchor for the canvas overlay.
+// ⚠ Read docs/FIRE_MARSHAL.md before editing.
 //
-// V1 rules:
-//   • aisleMinWidth         — narrow side of aisle ≥ jurisdiction min, AND
-//   • aisleCapacityFactor   — narrow side ≥ occupants × factor (whichever larger)
-//   • maxSeatsRowOneAisle   — outermost section's per-row count ≤ limit
-//   • maxSeatsRowTwoAisles  — inner section's per-row count ≤ limit
-//   • theaterRowClearMin    — (rowSpacing − chairD) ≥ min
-//   • roundsBackToBackMin   — zone.tableSpacing ≥ min
-//   • stageClearanceMin     — nearest seat to stage edge ≥ min
+// V1 ships 9 rules: aisleMinWidth, aisleCapacityFactor, theaterRowClearMin,
+// maxSeatsRowOneAisle / TwoAisles, roundsBackToBackMin, stageClearanceMin,
+// wallClearanceMin, egressMaxDistance. Each rule has a STRICTNESS direction
+// ('max' or 'min') that drives the per-AHJ merge.
 //
-// Jurisdiction selection is stored in the project file (state.project.fireCode
-// .jurisdictions[]) so a venue's governing AHJ travels with the file.
+// Key invariants:
+//   • Every value in data/fireCode.json carries `verify=true`. NONE is
+//     authoritative. The disclaimer in the file is load-bearing.
+//   • Jurisdiction list lives on state.project.fireCode.jurisdictions[] so
+//     a venue's governing AHJ travels with the .ptwist file.
+//   • Adding a rule = descriptor + per-AHJ values + STRICTNESS entry +
+//     validator block in runFireMarshal(). See docs/FIRE_MARSHAL.md recipe.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { formatInches } from './units.js'
 

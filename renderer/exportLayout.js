@@ -1,18 +1,26 @@
-// exportLayout.js — serialize the active layout to a clean, paper-sized SVG
-// string suitable for raster (PNG) and vector (PDF) export.
+// ─────────────────────────────────────────────────────────────────────────
+// Serialize the active layout to a paper-sized SVG string for raster
+// (PNG) or vector (PDF) export.
 //
-// Coordinate system in the output SVG:
-//   • Outer viewBox is in PAPER INCHES (svg width/height set with "in" units).
-//   • A nested <g transform="translate ... scale ..."> places the world
-//     content — internal coordinates remain world-inches, transform scales
-//     them to paper-inches.
-//   • Stroke widths inside the scaled group are in world-inches and scale
-//     down with the transform — so e.g. a stroke-width of 1 world-inch on a
-//     1:96 plan renders as 0.0104" on paper.
+// ⚠ Read docs/EXPORT.md before editing.
 //
-// V1 keeps it minimal — clean linework, simple title block, optional red
-// fire-marshal callouts. Anything fancier (sheet borders, scale bar with
-// ticks, north arrow, custom title-block templates) is for V2.
+// Coordinate system: outer viewBox in PAPER INCHES; nested
+// `<g transform="translate ... scale ...">` puts the world content inside.
+// Stroke widths inside the scaled group are in WORLD inches and scale
+// down with the transform (so `stroke-width="1"` at 1:96 renders as
+// ~0.01 paper inch).
+//
+// Key invariants:
+//   • `PAL` is a module-level palette set at the top of buildExportSVG
+//     based on cfg.theme. EVERY serializer reads from PAL — never pull
+//     colors directly from BRAND/ANNOT in a serializer.
+//   • Two themes: LIGHT (white paper, dark-navy strokes; print default)
+//     and DARK (navy paper, magenta strokes; mirrors the canvas).
+//   • Calling a `serialize*` function without calling buildExportSVG
+//     first leaves PAL at its last value — DON'T do that.
+//   • Title-block accent color flips with theme so TOTAL SEATS always
+//     uses the brand color (navy on light, magenta on dark).
+// ─────────────────────────────────────────────────────────────────────────
 
 import { state, activeRoom, activeLayout, styleFor } from './state.js'
 import { escapeAttr, escapeText } from './strings.js'
@@ -456,43 +464,73 @@ function serializeTitleBlock(cfg, room, layout, scaleChosen) {
   const totals = summarizeSeats(layout)
   const today  = new Date().toISOString().slice(0, 10)
 
+  // Theme-aware title block colors. Light: subtle off-white panel so it
+  // contrasts with the paper. Dark: slightly lighter than paper so it's
+  // readable but doesn't fight the layout above.
+  const isDark   = PAL === DARK_PAL
+  const tbBg     = isDark ? '#0f131e' : '#f7f7f8'
+  const tbBorder = isDark ? '#3a4256' : '#999'
+  const tbText   = isDark ? '#e8ebf3' : '#111'
+  const tbLabelC = isDark ? '#8990a3' : '#666'
+  const tbAccent = isDark ? '#FF2D9D' : '#070910'
+  const tbFaint  = isDark ? '#5b6177' : '#999'
+
   const out = []
   out.push(`<g class="title-block">`)
-  out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#222" stroke-width="0.012"/>`)
+  out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${tbBg}" stroke="${tbBorder}" stroke-width="0.012"/>`)
 
-  // Vertical separator after the project / room / layout column.
-  const colDivider = x + w * 0.55
-  out.push(`<line x1="${colDivider}" y1="${y}" x2="${colDivider}" y2="${y + h}" stroke="#222" stroke-width="0.008"/>`)
+  // Two vertical dividers — Left column (project/room/layout/date), Middle
+  // (per-style breakdown), Right (the headline TOTAL SEATS number).
+  const div1 = x + w * 0.42
+  const div2 = x + w * 0.72
+  out.push(`<line x1="${div1}" y1="${y}" x2="${div1}" y2="${y + h}" stroke="${tbBorder}" stroke-width="0.008"/>`)
+  out.push(`<line x1="${div2}" y1="${y}" x2="${div2}" y2="${y + h}" stroke="${tbBorder}" stroke-width="0.008"/>`)
 
-  // Left column — project / room / layout, stacked.
+  // Left column — project / room / layout / date, stacked.
   const leftPad = 0.18
   const lx = x + leftPad
   const lineH = h / 4
-  out.push(tbLabel(lx, y + lineH * 0.55, 'PROJECT', '#666'))
-  out.push(tbValue(lx + 0.55, y + lineH * 0.55, projectName))
-  out.push(tbLabel(lx, y + lineH * 1.55, 'ROOM',     '#666'))
-  out.push(tbValue(lx + 0.55, y + lineH * 1.55, room.name || 'Room'))
-  out.push(tbLabel(lx, y + lineH * 2.55, 'LAYOUT',   '#666'))
-  out.push(tbValue(lx + 0.55, y + lineH * 2.55, layout.name || 'Layout'))
-  out.push(tbLabel(lx, y + lineH * 3.55, 'DATE',     '#666'))
-  out.push(tbValue(lx + 0.55, y + lineH * 3.55, today))
+  out.push(tbLabel(lx, y + lineH * 0.55, 'PROJECT', tbLabelC))
+  out.push(tbValue(lx + 0.55, y + lineH * 0.55, projectName, tbText))
+  out.push(tbLabel(lx, y + lineH * 1.55, 'ROOM',    tbLabelC))
+  out.push(tbValue(lx + 0.55, y + lineH * 1.55, room.name || 'Room', tbText))
+  out.push(tbLabel(lx, y + lineH * 2.55, 'LAYOUT',  tbLabelC))
+  out.push(tbValue(lx + 0.55, y + lineH * 2.55, layout.name || 'Layout', tbText))
+  out.push(tbLabel(lx, y + lineH * 3.55, 'DATE',    tbLabelC))
+  out.push(tbValue(lx + 0.55, y + lineH * 3.55, today, tbText))
 
-  // Right column — totals + scale + credit.
-  const rx = colDivider + leftPad
-  out.push(tbLabel(rx, y + lineH * 0.55, 'TOTAL SEATS', '#666'))
-  out.push(tbValue(rx + 1.0, y + lineH * 0.55, String(totals.total), '700', 0.16))
-  let row = 1.55
-  if (totals.theater)   { out.push(tbLabel(rx, y + lineH * row, 'THEATER',   '#666')); out.push(tbValue(rx + 1.0, y + lineH * row, String(totals.theater)));   row++ }
-  if (totals.classroom) { out.push(tbLabel(rx, y + lineH * row, 'CLASSROOM', '#666')); out.push(tbValue(rx + 1.0, y + lineH * row, String(totals.classroom))); row++ }
-  if (totals.rounds)    { out.push(tbLabel(rx, y + lineH * row, 'ROUNDS',    '#666')); out.push(tbValue(rx + 1.0, y + lineH * row, String(totals.rounds)));    row++ }
-  if (totals.mixed)     { out.push(tbLabel(rx, y + lineH * row, 'MIXED',     '#666')); out.push(tbValue(rx + 1.0, y + lineH * row, String(totals.mixed)));     row++ }
-  // Always include scale + credit at the bottom of the right column.
-  out.push(tbLabel(rx, y + lineH * 3.55, 'SCALE',  '#666'))
-  out.push(tbValue(rx + 1.0, y + lineH * 3.55, scaleChosen.label))
+  // Middle column — per-style seat breakdown + scale at bottom.
+  const mx = div1 + leftPad
+  let row = 0.55
+  const styles = [
+    ['THEATER',   totals.theater],
+    ['CLASSROOM', totals.classroom],
+    ['ROUNDS',    totals.rounds],
+    ['MIXED',     totals.mixed],
+  ].filter(([, n]) => n > 0)
+  if (styles.length) {
+    for (const [label, n] of styles) {
+      out.push(tbLabel(mx, y + lineH * row, label, tbLabelC))
+      out.push(tbValue(mx + 0.7, y + lineH * row, String(n), tbText))
+      row++
+      if (row > 3) break
+    }
+  } else {
+    out.push(tbLabel(mx, y + lineH * 0.55, 'BREAKDOWN', tbLabelC))
+    out.push(tbValue(mx + 0.7, y + lineH * 0.55, '—', tbText))
+  }
+  out.push(tbLabel(mx, y + lineH * 3.55, 'SCALE', tbLabelC))
+  out.push(tbValue(mx + 0.7, y + lineH * 3.55, scaleChosen.label, tbText))
 
-  // Credit, far right.
+  // Right column — big TOTAL SEATS headline.
+  const rx = div2 + (x + w - div2) / 2          // centered in column
+  const ry = y + h / 2
+  out.push(`<text x="${rx}" y="${ry - 0.20}" text-anchor="middle" font-size="0.10" font-weight="600" letter-spacing="0.12em" fill="${tbLabelC}">TOTAL SEATS</text>`)
+  out.push(`<text x="${rx}" y="${ry + 0.18}" text-anchor="middle" font-size="0.55" font-weight="700" fill="${tbAccent}">${totals.total}</text>`)
+
+  // Credit, far right, bottom edge.
   const creditX = x + w - leftPad
-  out.push(`<text x="${creditX}" y="${y + h - 0.18}" text-anchor="end" font-size="0.12" fill="#999">PlotTwist · veproductions.net</text>`)
+  out.push(`<text x="${creditX}" y="${y + h - 0.10}" text-anchor="end" font-size="0.085" fill="${tbFaint}">PlotTwist · veproductions.net</text>`)
 
   out.push(`</g>`)
   return out.join('')
@@ -501,8 +539,8 @@ function serializeTitleBlock(cfg, room, layout, scaleChosen) {
 function tbLabel(x, y, text, color) {
   return `<text x="${x}" y="${y}" font-size="0.085" font-weight="600" fill="${color}" letter-spacing="0.04em">${escapeText(text)}</text>`
 }
-function tbValue(x, y, text, weight = '500', size = 0.13) {
-  return `<text x="${x}" y="${y}" font-size="${size}" font-weight="${weight}" fill="#111">${escapeText(text)}</text>`
+function tbValue(x, y, text, color = '#111', weight = '500', size = 0.13) {
+  return `<text x="${x}" y="${y}" font-size="${size}" font-weight="${weight}" fill="${color}">${escapeText(text)}</text>`
 }
 
 function summarizeSeats(layout) {

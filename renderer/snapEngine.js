@@ -1,10 +1,21 @@
-// snapEngine.js — anchor-based snapping during drag.
+// ─────────────────────────────────────────────────────────────────────────
+// Anchor + edge snapping during drag.
 //
-// During a move drag the engine collects "anchor" points from every visible,
-// unlocked object (corners, edge midpoints, center) and tests the dragged
-// object's anchors against them. When a pair is within tolerance, the drag
-// is offset so the anchors coincide and a snap indicator is set so the tool
-// layer can draw a marker.
+// ⚠ Read docs/CANVAS_AND_SNAP.md before editing.
+//
+// Collects anchor points (corners, midpoints, centers) from every visible,
+// non-dragged object — including solver-output chairs and tables — and
+// tests the dragged shape's anchors against them. Also does edge-snap:
+// each dragged anchor is tested against every non-dragged object's
+// perimeter. Centerline pull is special-cased for midpoint/center anchors.
+//
+// Key invariants:
+//   • Shift = AGGRESSIVE snap (3× tolerance + 1.5× centerline pull),
+//     NOT bypass. Bypass is the Settings → Workspace → Snap toggle.
+//   • `state.snapIndicator` is the engine's only side effect besides the
+//     returned offset — it's how the tool layer draws the snap marker.
+//   • Hidden / locked objects are excluded from the anchor pool.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { activeRoom, activeLayout, selectedObjects } from './state.js'
 

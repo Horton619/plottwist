@@ -1,247 +1,240 @@
-# PlotTwist — working agreement
+# PlotTwist
 
-> **Project-scoped CLAUDE.** Loads when working in `/Users/horton/PlotTwist/`. Cross-project lessons live in `~/.claude/CLAUDE.md` (the "global CLAUDE").
-
-This file is for Claude. It is **not** project documentation — it is a
-collaboration contract between Dave and whatever session is reading it.
-Project facts go in source code and commit messages; this file tells you
-how to behave.
-
----
-
-## Project state
+> **Project-scoped CLAUDE.** Loads when working in `/Users/horton/PlotTwist/`.
+> Cross-project lessons live in `~/.claude/CLAUDE.md` (the "global CLAUDE").
 
 PlotTwist is a working Electron app: a seating-layout calculator with a
 polygon room editor, a four-style solver (theater / classroom / rounds /
 mixed), fire-marshal validation against four AHJs, and PNG/PDF export with
-a title block. The ~7,700-line renderer is feature-complete through build
-queue step 23. Remaining queue: GitHub Actions release pipeline, a
-diagnostics tab, and a few small polish items. No bundler, no TypeScript,
-no test suite — just ES modules in the renderer, a thin IPC bridge in
-preload, and Electron main for window/menu/file dialogs.
-
-Code quality is unusually high for a learning project: solvers are
-factored cleanly into a dispatcher + per-style files with shared
-geometry helpers, escaping is centralized in `strings.js`, color tokens
-in `colors.js`, settings in `settings.js`. There is one `TEMP` marker
-(View → Restart App in `main.js`) and zero `TODO/FIXME/HACK`. That is
-not normal and means the codebase rewards careful reading — sloppy
-inserts will stand out.
+a title block. Shipped v0.1.5. No bundler, no TypeScript, no test suite —
+just ES modules in the renderer, a thin IPC bridge in preload, and Electron
+main for window/menu/file dialogs.
 
 ---
 
-## Canonical references
+## ⚠ READ FIRST — load the right topic doc before writing code
 
-Read these first, in this order, before touching anything non-trivial:
+| If your task touches… | Read first |
+|---|---|
+| chevron, aisles, row pitch, classroom depth, goal/cap, mixed seating, `renderer/solver/*` | [`docs/SOLVER.md`](docs/SOLVER.md) |
+| `state.project` mutations, undo, paste/duplicate, container routing, openProject migrations, `state.js` / `app.js` | [`docs/STATE.md`](docs/STATE.md) |
+| `canvas.js`, drag modes, vertex/edge handles, mid-edge behavior, snap engine, pointer dispatch, NSS dasharray | [`docs/CANVAS_AND_SNAP.md`](docs/CANVAS_AND_SNAP.md) |
+| fire-code rules, AHJ values, `fireMarshal.js`, capacity bar, adding a new rule | [`docs/FIRE_MARSHAL.md`](docs/FIRE_MARSHAL.md) |
+| `exportLayout.js`, export dialog, title block, theme palette, PNG/PDF output | [`docs/EXPORT.md`](docs/EXPORT.md) |
+| signing, notarization, `.github/workflows/release.yml`, `package.json` build block, autoUpdater, update banner | [`docs/RELEASES.md`](docs/RELEASES.md) |
 
-1. **`renderer/state.js`** — project shape, `mutateProject` vs
-   `setState`, undo transactions, `STYLE_DEFAULTS`. Everything else is
-   downstream of this.
-2. **`renderer/solver/index.js`** then **`renderer/solver/geom.js`** —
-   dispatcher + the shared scan-line / aisle / obstruction helpers.
-   The four style solvers (`theaterSolver.js`, `classroomSolver.js`,
-   `roundsSolver.js`, `mixedSolver.js`) all build on these.
-3. **`renderer/canvas.js`** (1,482 lines) — render loop, pointer
-   dispatch, drag modes, snap indicator. The biggest file by far. If
-   you're touching interaction, read the whole thing — the priority
-   ordering in `onPointerDown` is load-bearing.
-4. **`renderer/ui/objectInfo.js`** (682 lines) — every per-object UI
-   control lives here. If a property exists on an object, the editor for
-   it is somewhere in this file.
-5. **Commit messages from May 1–2, 2026** (`a67d39d` onward) — the four
-   QA-batch commits document real bugs and their fixes. They are
-   load-bearing context, not just changelog noise.
-
-### Staleness warning
-
-Earlier versions of this file were a 400-line project-doc / build-queue
-hybrid. **That content is stale and was deliberately deleted.** Do not
-try to reconstruct it from memory or from prior turns of any
-conversation. The source of truth for "what's done" is git log; the
-source of truth for "what exists" is the file tree; the source of truth
-for "how it works" is the code itself. If you find yourself wanting to
-quote build-queue step numbers or a `Done / Open / Backlog` list, stop
-— that scaffolding was for a prior phase of the project and is no
-longer how decisions get made.
+If your task touches multiple areas, load multiple docs. Don't skip them
+even on small changes — the docs are sized small (50–150 lines each) so
+loading two is still cheap.
 
 ---
 
-## Decisions already made (don't relitigate)
+## Universal rules (apply everywhere)
 
-These are non-obvious choices Dave landed on after iteration. Restating
-the trade-off without new information wastes a turn.
-
-- **No bundler, no TypeScript.** Vendored libs via `scripts/copy-vendor.js`
-  postinstall. CSP allows the minimum needed for vendored pdfjs.
-- **Imperial only.** Internally integer inches. Bare-number input means
-  feet, not inches (`30` → 30'). `"` suffix forces inches.
-- **Solver semantics: goal, not cap.** When `preference: 'exact'` with a
-  `target`, fill complete rows and stop once `totalSeats >= target`.
-  One row of spill is acceptable. The Object Info label is "Goal", not
-  "Cap".
-- **Same style per row.** Aisle-split mixed rows are explicitly out of
-  scope. Mixed = front classroom + transition gap + back theater.
-- **Chevron lives inside the placement loop**, per-row, anchored at the
-  inner aisle edge. It is *not* a section rotation post-process. Default
-  angle slants outer ends *toward* the stage; negative reverses.
-- **Chevron is for theater/classroom/mixed only. Rounds use offsetRows
-  (hex packing) instead.**
-- **Obstruction filter is a post-process** corner test. Classroom drops
-  the table+chairs as one atomic unit.
-- **Walls ARE obstructions.** They're polygons in `room.objects` with
-  `type: 'walls'` and live in the solver's `BLOCKING` set alongside
-  obstruction / stage / tech. Use case: a room with pillars jutting in
-  from the wall — the user drags the wall shape and the solver removes
-  any chair that would collide. Earlier versions of this doc said walls
-  were a containment boundary; that idea was rejected in favor of
-  treating walls as just-another-obstruction.
-- **Underlay images are base64-embedded** in `.ptwist`. Sidecar storage
-  is v2.
-- **Layouts within rooms.** Structural objects (floor, walls,
-  obstruction, stage, tech, underlay) live on the room. Solver-generated
-  objects (seating zones, aisles, dim lines) live on the layout. Don't
-  mix the two arrays.
-- **Visual language: navy `#070910` + magenta `#FF2D9D`.** Violations
-  use red `#FF3B30`, NOT magenta — magenta is brand chrome, red reads
-  as warning.
-- **`vector-effect="non-scaling-stroke"` interprets `stroke-dasharray`
-  in screen pixels, not world units.** Don't multiply dasharray values
-  by `pxToWorldDist` on NSS strokes — that double-counts zoom.
-- **GitHub releases via `electron-updater`** + a renderer-side fetch
-  fallback for the manual "Check now" button. CSP must include
-  `https://api.github.com` under `connect-src`. Main process fans every
-  event in on a single `update-status` channel (`checking` / `available`
-  / `progress` / `downloaded` / `error`) — don't add per-event IPC.
-  `autoDownload = false`, `autoInstallOnAppQuit = true`.
-- **Shift = aggressive snap, NOT bypass.** Earlier code had shift bypass
-  snap entirely; that was reversed. Shift now triples the snap tolerance
-  and adds an extra 1.5× pull to the room's vertical centerline for any
-  midpoint or center anchor on the dragged shape. True bypass = toggle
-  off in Settings → Workspace → Snap.
-- **Polygon edge midpoint handle drags the edge perpendicular**, not
-  inserts a vertex. Vertex insertion lives on right-click-on-edge
-  (discoverable) and Alt+click on the mid-edge handle (power-user
-  shortcut, same code path as the old behavior). Right-click on a
-  vertex deletes it.
+- **Don't commit until asked.** When asked, draft a focused message; never
+  `git push` without explicit instruction.
+- **Don't refactor / extract / rename beyond the requested change.** Three
+  similar lines is better than a premature abstraction.
+- **Don't add error handling around internal code.** Validate at boundaries
+  only (IPC, file load, GitHub API). Trust internally.
+- **Don't add `what` comments.** Only `why` — hidden constraints,
+  workarounds, surprises.
+- **Imperial only, integer inches internally.** Bare-number input means
+  feet (`30` → 30'). `"` suffix forces inches.
+- **`mutateProject(fn)` is the only path that snapshots for undo and dirties
+  the file.** `setState(patch)` is for transient state.
+- **`vector-effect="non-scaling-stroke"` interprets `stroke-dasharray` in
+  screen pixels, not world units.** Don't multiply by `pxToWorldDist`.
+- **Solver-generated objects (seating, aisles, dim lines) live on a
+  LAYOUT, not the room.** Type-aware routing; see STATE.md.
+- **Shift = aggressive snap, not bypass.** Bypass = the Settings toggle.
 
 ---
 
-## Open questions
+## Stack
+
+- **Electron** 29 (main + Chromium renderer, preload bridge with
+  `contextIsolation: true`, `nodeIntegration: false`).
+- **Vanilla ES modules in the renderer.** No bundler, no TypeScript,
+  no JSX. Direct DOM + SVG.
+- **Vendored libs** copied at postinstall (`scripts/copy-vendor.js`):
+  `polygon-clipping` for boolean ops, `pdfjs-dist` for PDF underlay
+  import. `electron-updater` is a normal npm dep.
+- **CSP** allows `'self'`, `data:`, `blob:`, `wasm-unsafe-eval` (pdfjs
+  worker), and `https://api.github.com` (renderer-side update check).
+
+## Current state
+
+Shipped v0.1.5 with: walls + obstructions + stages + tech as venue
+chrome; doors with single/dual swing + opens-in/out; seating zones with
+4 styles; auto-aisles + user aisles; per-zone seat-count labels;
+per-room origin + centerline + reflect-across-centerline; fire-marshal
+validator with 9 rules across 4 AHJs + capacity bar; PNG + PDF export
+with light/dark theme; in-app auto-update via GitHub Releases (mac
+arm64 signed + notarized, win x64 unsigned).
+
+## Project structure
+
+```
+main.js                            Electron main: BrowserWindow, menus, IPC
+preload.js                         contextBridge bridge (file dialogs, IPC)
+data/fireCode.json                 Fire-code rules + per-AHJ values        → docs/FIRE_MARSHAL.md
+build/                             Icons, entitlements, DMG bg, icon.svg   → docs/RELEASES.md
+.github/workflows/release.yml      Tag-driven build pipeline               → docs/RELEASES.md
+scripts/build-icons.sh             Regenerates icon.icns / .ico / dmg-bg
+renderer/
+  app.js                           Bootstrap, file open/save, migrations    → docs/STATE.md
+  state.js                         State + mutateProject + undo             → docs/STATE.md
+  settings.js                      localStorage-backed preferences
+  canvas.js                        Render + pointer dispatch + drag         → docs/CANVAS_AND_SNAP.md
+  snapEngine.js                    Anchor + edge snap                       → docs/CANVAS_AND_SNAP.md
+  geom.js                          Generic geometry (pointInPolygon, bounds)
+  shapeOps.js                      Boolean union / subtract / intersect
+  exportLayout.js                  Paper-scaled SVG output                  → docs/EXPORT.md
+  fireMarshal.js                   Validator + strictest-AHJ merge          → docs/FIRE_MARSHAL.md
+  updater.js                       Renderer-side GitHub REST fallback       → docs/RELEASES.md
+  imageImport.js                   PDF / PNG / JPG underlay import
+  strings.js                       Shared escapeHtml / escapeAttr / escapeText
+  units.js                         Inches ↔ feet'-inches" parse/format
+  colors.js                        BRAND + ANNOT color tokens
+  solver/
+    index.js                       Style dispatcher                         → docs/SOLVER.md
+    geom.js                        Local frame, scan-line, tagObstructions  → docs/SOLVER.md
+    theaterSolver.js               Row fit + chevron + per-section cap      → docs/SOLVER.md
+    classroomSolver.js             Same row mechanic, table units           → docs/SOLVER.md
+    roundsSolver.js                Round tables, hex packing, crescent      → docs/SOLVER.md
+    mixedSolver.js                 Classroom + theater split + optimizer    → docs/SOLVER.md
+  tools/
+    rectTool.js                    Rect drag for floor/aisle/stage/etc/door → docs/STATE.md
+    polygonTool.js                 Polygon draw for walls + seating zones   → docs/STATE.md
+    dimTool.js                     Dim line draw
+    imageTool.js                   Insert underlay image
+    selectTool.js                  Hit-test helpers used by canvas.js
+  ui/
+    toolbar.js                     Tool selection chrome
+    projectSidebar.js              Rooms + layouts list, add/rename/delete
+    objectList.js                  Layers panel + running seat total
+    objectInfo.js                  Per-object property editor               → docs/STATE.md + SOLVER.md
+    settingsModal.js               Settings dialog (Workspace/Defaults/FireCode/Updates)
+    exportDialog.js                Page Setup + Export                      → docs/EXPORT.md
+    fireMarshalSheet.js            Slide-in violations panel                → docs/FIRE_MARSHAL.md
+    icons.js                       SVG icon literals (eye, lock, etc.)
+```
+
+## Data model
+
+```
+project (saved as .ptwist v2)
+├── rooms[]                        Each room is a venue
+│   ├── id, name
+│   ├── origin: { x, y }           Per-room as of v2; v1 migrates on load
+│   ├── centerline: { enabled, x, color, thickness }
+│   ├── objects[]                  Structural: floor, walls, obstruction,
+│   │                              stage, tech, underlay image, door
+│   └── layouts[]                  Each layout is a configuration
+│       ├── id, name, hidden, locked
+│       └── objects[]              Solver-generated: seating, aisle, dim
+└── fireCode: { jurisdictions[] }  Active AHJ ids
+
+LAYOUT_OBJECT_TYPES = new Set(['seating', 'aisle', 'dim'])
+  ↑ enforced via migration on every project open; never push these into room.objects
+```
+
+## Environment & credentials
+
+- Node + npm + Electron toolchain. No Python.
+- `gh` CLI authenticated.
+- Apple signing: VEP team cert `L5KZ5KGKXC`, 5 GH secrets per the
+  global CLAUDE recipe. See `docs/RELEASES.md`.
+
+## Running locally
+
+- `npm start` — Electron app, no packaging. Auto-updater is a no-op in
+  dev (only fires when `app.isPackaged`).
+- `npm run dist:mac` — Build a notarized DMG locally (needs the 5
+  Apple env vars set).
+- `npm run release:mac` / `release:win` — Build AND publish to GitHub
+  (CI does this on tag push; running it locally is rare).
+- Tag-driven release: `git tag v0.1.X && git push origin v0.1.X`.
+
+## Universal quirks (cross-cutting, too small for a topic doc)
+
+- **No bundler, no TypeScript.** Vendored libs via postinstall. Don't
+  introduce a build step.
+- **Per-zone fields can be missing on old data.** Fields like
+  `seatCountLabel`, `tableNumbering`, `seatGap`, etc. default to safe
+  values if undefined — don't make them required.
+- **Hidden ≠ removed.** A hidden aisle still counts in solver math. A
+  hidden seating zone still ships data into the project file. Hidden is
+  purely a render-time concern.
+- **`pattern` field on seating zones was scaffolding.** Removed from
+  the UI; chevron is its own boolean now. Old `.ptwist` files may still
+  carry `pattern: 'straight'` — ignore it.
+- **Don't add a `Restart App` menu item.** There's still a TEMP one in
+  `main.js:96` for dev iteration; remove it before final ship.
+
+## Branding / design
+
+Navy `#070910` background, magenta accent `#FF2D9D`. Fire-marshal
+violations use red `#FF3B30` (NOT magenta — red reads as warning;
+magenta is brand chrome). Print export inverts: white paper, dark-navy
+strokes (`#1a2942`), brand-color reserved for the TOTAL SEATS headline.
+
+Visual language defaults inherit from the global CLAUDE.
+
+## Open work
 
 Truly undecided, not just unwritten:
 
-- **Fire-code rule coverage.** Seven rules ship across four AHJs. Real
-  jurisdictions have dozens more. Which rules are next? Citation
-  verification (`verify=true` flags in `data/fireCode.json`) hasn't
-  happened.
-- **Walls as containment boundary.** Backlog item, no design yet.
-  Plumbed how — `opts.containers[]` through the dispatcher?
-- **Image rotation.** ⌘L / ⇧⌘L is the spec; the rotation field, hit-test
-  AABB, and handle math are not designed.
-- ~~**Per-room vs project-level origin/centerline.**~~ Resolved: per-room.
-  Each room carries its own `origin` and `centerline`. `.ptwist` v2.
-  Older v1 files migrate on open (project-level fields copy to every room).
+- **Fire-code rule coverage.** 9 rules ship across 4 AHJs; real
+  jurisdictions have dozens more. Citation verification (`verify=true`
+  flags) hasn't happened.
+- **Walls as containment boundary.** Backlog. Walls currently work as
+  edge-only obstructions (stroke blocks chairs); some users may want
+  "drop chairs outside the wall polygon" too.
+- **Walls + floors integration.** "Click on a wall polygon → auto-add a
+  matching floor" was promised in a recent session but not built.
+- **Image rotation.** ⌘L / ⇧⌘L is the spec; rotation field + hit-test
+  AABB + handle math undone.
 - **Tab-to-type in canvas.** Object Info inputs cover the same ground;
   defer until users miss it.
-- ~~**CI release pipeline.**~~ Resolved: `.github/workflows/release.yml`
-  ships mac-arm64 (real Developer ID signing + notarization via
-  electron-builder) and win-x64 (unsigned for now), triggered on
-  `v*.*.*` tag push. Uses the VEP-wide team cert (`L5KZ5KGKXC`) and the
-  standard five secrets (CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID,
-  APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID — see global CLAUDE.md
-  for the full recipe). The renderer-side updater UI (live progress
-  bar in Settings → Updates, top-of-window "Restart now" banner)
-  forwards every electron-updater event on a single `update-status`
-  IPC channel.
 
----
-
-## How I work (Dave)
+## How I (Dave) work
 
 - Not a professional programmer. Comfortable with high-level concepts;
   picks up vocabulary over time. Frame technical detail in plain English
   alongside the jargon, not instead of it.
-- Decisive when shown options. If you give a clear "A vs B, here are the
-  trade-offs" at the right grain, expect a fast pick. If you ask
-  open-ended "what should we do," expect frustration.
-- Step-by-step is the rhythm. Each build-queue step shipped before the
-  next started, and that's still how it works. Don't bundle three
-  features into one diff.
-- Wants uncertainty flagged, not hidden. "I'm not sure if this also
-  affects X — should I check?" is welcomed. Confident tone on something
-  you guessed at is a problem.
-- Reads diffs carefully and pushes back when something is off. Multiple
-  iterations on chevron, table-style, and aisle math happened because
-  the first interpretation was wrong. Don't take pushback as defeat —
-  it usually means the spec was incomplete and you both need to look at
-  a reference image or mockup.
-- Doesn't want commits or pushes unless asked. Doesn't want refactors,
-  helpers, or "cleanups" beyond the requested change.
+- Decisive when shown options. "A vs B, here are the trade-offs" → fast
+  pick. Open-ended "what should we do" → frustration.
+- Step-by-step. Don't bundle three features into one diff.
+- Wants uncertainty flagged. "I'm not sure if this affects X — should I
+  check?" is welcomed. Confident tone on a guess is a problem.
+- Reads diffs carefully and pushes back. Multiple iterations on chevron,
+  table-style, and aisle math happened because the first interpretation
+  was wrong. Pushback usually means the spec was incomplete — look at a
+  reference image or mockup before another try.
 
----
-
-## Working agreement for future sessions
+## Working agreement
 
 ### Ask before doing when:
-- The change spans 3+ files. Show a one-paragraph plan and the file
-  list first.
-  > *Good:* "Plan: add `containers[]` to opts in `solver/index.js`,
-  > thread through 4 solvers, add `pointInPolygon` containment test in
-  > `solver/geom.js`. Touches 6 files. Want me to proceed?"
-  > *Bad:* (just doing it across six files in one tool block)
-- The spec implies a UI affordance that doesn't exist yet. Don't invent
-  the control without checking.
-- A request and an existing decision in this file conflict. Surface the
-  conflict before resolving it.
-  > *Good:* "You said 'add chevron to rounds,' but the doc here says
-  > rounds use offsetRows instead. Has that changed, or did you mean
-  > something else?"
+- Change spans 3+ files. Show a one-paragraph plan + file list first.
+- Spec implies a UI affordance that doesn't exist yet.
+- A request and a documented decision conflict — surface the conflict,
+  don't silently resolve it.
 
 ### Just do it when:
-- One-file diff, change is mechanical, no design decisions involved.
-- Bug fix where the fault is unambiguous from the symptom + code.
+- One-file diff, mechanical change, no design decisions.
+- Bug fix where the fault is unambiguous.
 - Cosmetic / copy / styling tweak.
 
 ### Always re-read source when:
-- It's been more than ~5 turns since you last read the file you're
-  about to edit. Memory drift is real and `canvas.js` in particular
-  changes shape between sessions.
+- It's been more than ~5 turns since you last read the file.
 - A summary block tells you you're picking up after a context reset.
-  **Trust the file tree and `git log`, not the summary.** This session
-  started with a summary that listed files like `fireMarshal.js` as if
-  they were known — they were added in commits outside the prior chat
-  and the summary preserved that fact, but it could just as easily
-  have not. Verify.
-- You're about to make an assumption that begins "I think the function
-  signature is…" — it's faster to read it than to guess and patch.
-
-### Flag unreliable memory by saying so:
-> *Good:* "I'm working from the summary, not from the actual file —
-> let me read `objectInfo.js` before suggesting where to add this."
-> *Bad:* "The objectInfo panel has a section around line 400 where…"
-> (when you haven't actually opened it this session)
-
-### Spec conflict resolution:
-1. State both sides plainly. ("The doc says X. Your last message implies
-   Y.")
-2. Ask which wins.
-3. After the answer, if the doc is wrong, **update the doc in the same
-   diff** as the code change. A doc that lies is worse than no doc.
-
-### Fresh thread vs continue:
-- **Continue** if the current session has the relevant files in cache
-  and the work is incremental on top of recent changes.
-- **Fresh thread** if you're starting a new build-queue step, or the
-  domain shifts (e.g. moving from solver work to CI pipeline work). The
-  cost of re-orienting in a fresh thread is lower than carrying stale
-  assumptions from an unrelated discussion.
-- A summary handoff is *not* free. Treat the first turn after a summary
-  as "investigate before acting" — read 2–3 canonical files, then
-  proceed.
+  Trust the file tree and `git log` over the summary.
+- You're about to make an assumption that starts "I think the function
+  signature is…" — read it instead.
 
 ### Multi-file change preview format:
-When you do show a plan, use this shape:
-
 ```
 Touches:
 - renderer/solver/geom.js     — add `pointInPolygon` containment helper
@@ -250,23 +243,10 @@ Touches:
 Risk: classroomSolver/roundsSolver also need it; flag if I should
 do those in this diff or a follow-up.
 ```
+List, not prose.
 
-Not prose. Not "I'll update the geom helper and then…". A list.
+## Reference paths
 
----
-
-## Anti-patterns (caught in this codebase before)
-
-- Adding error handling, validation, or try/except around internal
-  code. The rule is: validate at boundaries (IPC, file load, GitHub
-  API), trust internally.
-- Renaming "Goal" to "Target" or "Cap" because it sounds cleaner. The
-  current names are deliberate (see `goal-not-cap` decision above).
-- Making seating-zone fields optional when the solver requires them.
-  Mixed solver in particular reads `optimizedDepth` and writes it back
-  — don't shortcut around the round-trip.
-- Touching `vector-effect="non-scaling-stroke"` math without checking
-  the screen-px-vs-world-units footgun.
-- Combining structural-objects (room.objects) with layout-objects
-  (layout.objects) in one helper without checking which array is
-  authoritative for the operation.
+- Global CLAUDE: `~/.claude/CLAUDE.md`
+- Reference desktop project (for build/signing patterns): `~/calltime/` is
+  web-only; FlowCast / SlideFluid are the closest Electron siblings.

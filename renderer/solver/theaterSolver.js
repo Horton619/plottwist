@@ -1,5 +1,21 @@
-// Theater solver — scan-line row fit. Single style, straight rows for v1.
-// Pattern dispatch lives here so 'chevron' / 'curved' can plug in later.
+// ─────────────────────────────────────────────────────────────────────────
+// Theater solver — scan-line row fit with chevron + per-section aisle cap.
+//
+// ⚠ Read docs/SOLVER.md before editing.
+//
+// Same shape as classroomSolver — both call subtractRanges to cut each
+// row's horizontal span at the auto-aisle + user-aisle positions, then
+// fit chairs into the resulting spans. Chevron applies per-row, anchored
+// at the inner aisle edge of each "outer" span.
+//
+// Key invariants:
+//   • `chevronAngle` clamps to [-45, 45], NOT [0, 45]. Reflected zones
+//     flip the sign and need negative to survive.
+//   • Chevron's `isOuter` gate has an `aisleCount === 0 ? true : ...`
+//     branch so 0-aisle zones still get the angled placement.
+//   • Per-section maxPerRow cap — count is checked per SPAN, not per row,
+//     so a 2-section row can have maxPerRow on each side.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { bbox, intoLocalFrame, worldToLocal, localToWorld, horizontalSpans, subtractRanges, computeAislePositions, fitUnits, tagObstructions, itemTouchesAny } from './geom.js'
 
@@ -65,9 +81,8 @@ function solveStraight(zone, opts) {
   // Chevron — rotates the OUTERMOST sections inward. Each chevron'd row is
   // a continuous angled line of chairs, NOT a rotation of the whole section.
   const chevron      = !!zone.chevron
-  // Clamp to [-45, 45]. Negative = chevron slants AWAY from the stage
-  // (e.g. reflected-across-centerline zones get a negated chevronAngle so
-  // their outer ends still point toward the stage on the mirrored side).
+  // ⚠ DO NOT clamp to [0, 45] — reflected zones flip the sign and need
+  // negative to survive. See docs/SOLVER.md.
   const chevronAngle = Math.max(-45, Math.min(45, zone.chevronAngle ?? 15))
 
   // Read the new aisles config; fall back to legacy centerAisle for safety.
@@ -151,6 +166,8 @@ function solveStraight(zone, opts) {
       // span when there are zero aisles (single-direction slope; user
       // mirrors with Reflect to make a V). Chairs that walk past the
       // section's outer x bound get dropped.
+      // ⚠ DO NOT collapse to `cleanSpans.length > 1 && ...` — that's the
+      // pre-fix gate that made 0-aisle chevron silently flat.
       const isOuter = chevron && (
         aisleCount === 0
           ? true

@@ -1,3 +1,22 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Electron main process. Owns BrowserWindow, native menus, file dialogs,
+// PDF export (hidden BrowserWindow + printToPDF), and the auto-updater
+// fan-in.
+//
+// ⚠ Read docs/RELEASES.md before editing autoUpdater wiring,
+//   IPC update channels, or the PDF export window.
+//
+// Key invariants:
+//   • Every autoUpdater event fans into ONE IPC channel: 'update-status'.
+//     Renderer subscribes once via preload's `onUpdateStatus(cb)`.
+//   • `autoDownload = false`, `autoInstallOnAppQuit = true`.
+//   • Launch update check is delayed 60s (GitHub atom-feed cache lag).
+//   • PDF export window has a strict CSP — don't widen it without reason.
+//   • IPC handlers validate path safety (read-bundled-resource only
+//     reads inside app.getAppPath()) and URL safety (open-external
+//     rejects non-http(s)).
+// ─────────────────────────────────────────────────────────────────────────
+
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
 const path = require('path')
 const fs = require('fs')
@@ -143,8 +162,9 @@ function wireAutoUpdater() {
   autoUpdater.on('update-downloaded',    (i)   => sendUpdateStatus({ type: 'downloaded', version: i.version }))
   autoUpdater.on('error',                (err) => sendUpdateStatus({ type: 'error', message: err?.message || String(err) }))
 
-  // Launch-time check — packaged builds only. Delay 60s so the GitHub
-  // releases atom feed has time to refresh (it caches several minutes).
+  // ⚠ DO NOT shorten the 60s delay — GitHub atom feed caches release
+  // entries for several minutes; an immediate check misses the just-pushed
+  // version. See docs/RELEASES.md.
   if (app.isPackaged) {
     setTimeout(() => autoUpdater.checkForUpdates().catch(err => {
       sendUpdateStatus({ type: 'error', message: err?.message || String(err) })

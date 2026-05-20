@@ -1,4 +1,23 @@
-// Central state + tiny pub-sub. All world units are integer inches.
+// ─────────────────────────────────────────────────────────────────────────
+// Central project state + tiny pub-sub. All world units are integer inches.
+//
+// ⚠ Read docs/STATE.md before editing.
+//
+// Owns: the `state` object, `mutateProject`/`setState`/`subscribe`,
+// undo/redo via deep-cloned snapshots, transactions that collapse a drag
+// into one undo step, `TYPE_STYLES` (per-object-type render styling), and
+// `objectName`.
+//
+// Key invariants:
+//   • `mutateProject(fn)` is the ONLY path that snapshots for undo and
+//     flips `state.dirty = true`. Outside it = no undo + no save indicator.
+//   • `setState(patch)` notifies but doesn't touch undo or dirty — for
+//     selection / viewport / drag state / fire-marshal report.
+//   • Solver-generated objects (seating / aisle / dim) live on layouts,
+//     never on the room. See LAYOUT_OBJECT_TYPES in app.js.
+//   • `beginTransaction()` / `endTransaction()` wrap drags so dozens of
+//     per-pointermove mutations collapse to one undo step.
+// ─────────────────────────────────────────────────────────────────────────
 
 import { getSetting } from './settings.js'
 
